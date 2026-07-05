@@ -4,6 +4,7 @@ import { api } from './api';
 import type { SyncState } from './types';
 import Home from './pages/Home';
 import Browse from './pages/Browse';
+import Pick from './pages/Pick';
 import Search from './pages/Search';
 import Library from './pages/Library';
 import Title from './pages/Title';
@@ -64,6 +65,7 @@ export default function App() {
         <NavLink to="/" className="logo">watch-it</NavLink>
         <nav>
           <NavLink to="/" end>Home</NavLink>
+          <NavLink to="/pick">Pick For Me</NavLink>
           <NavLink to="/browse">Browse</NavLink>
           <NavLink to="/library">Library</NavLink>
           <NavLink to="/schedule">Schedule</NavLink>
@@ -112,6 +114,7 @@ export default function App() {
       <main>
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/pick" element={<Pick />} />
           <Route path="/browse" element={<Browse />} />
           <Route path="/search" element={<Search />} />
           <Route path="/library" element={<Library />} />

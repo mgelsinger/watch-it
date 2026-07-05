@@ -792,6 +792,176 @@ h2.row-title {
   border-radius: 4px;
 }
 
+/* ---- Pick For Me ---- */
+.pick-cta {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-raised));
+  padding: 14px 18px;
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+.pick-cta:hover {
+  background: color-mix(in srgb, var(--accent) 20%, var(--bg-raised));
+  color: var(--text);
+}
+.pick-cta .pick-cta-sub {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.pick-panel {
+  max-width: 900px;
+  margin: 0 auto;
+  min-height: calc(100vh - 220px);
+}
+.pick-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.pick-form {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+}
+.pick-field {
+  margin-bottom: 18px;
+}
+.pick-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.pick-clear {
+  font-size: 11px;
+  padding: 1px 8px;
+  margin-left: 6px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.pick-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pick-chips .chip {
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 13px;
+}
+.pick-chips .chip.on {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: transparent;
+  font-weight: 600;
+}
+.pick-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.pick-go {
+  font-size: 16px;
+  padding: 10px 28px;
+}
+
+.pick-card {
+  display: flex;
+  gap: 24px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  align-items: flex-start;
+}
+.pick-poster {
+  width: 260px;
+  max-width: 38vw;
+  aspect-ratio: 2/3;
+  object-fit: cover;
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  background: var(--bg-hover);
+  flex-shrink: 0;
+}
+.pick-poster.noposter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.pick-info {
+  flex: 1;
+  min-width: 0;
+}
+.pick-badges {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.pick-badges .typechip,
+.pick-badges .flag {
+  position: static;
+}
+.pick-title {
+  margin: 0 0 4px;
+  font-size: 26px;
+}
+.pick-ep {
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+.pick-reasons {
+  margin-top: 10px;
+  font-size: 14px;
+  color: var(--accent);
+  font-weight: 600;
+}
+.pick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+  align-items: center;
+}
+.pick-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+@media (max-width: 640px) {
+  .pick-card {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .pick-actions,
+  .pick-badges {
+    justify-content: center;
+  }
+}
+
+.season .ep.anchored {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-left: 3px solid var(--accent);
+}
+
 .spin {
   display: inline-block;
   animation: spin 1s linear infinite;

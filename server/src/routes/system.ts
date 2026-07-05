@@ -137,7 +137,7 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
 
   app.put('/api/settings', async (req) => {
     const body = z.record(z.string()).parse(req.body);
-    const allowed = new Set(['region', 'schedule_country', 'theme', 'broadcast_networks']);
+    const allowed = new Set(['region', 'schedule_country', 'theme', 'broadcast_networks', 'pick_constraints']);
     for (const [k, v] of Object.entries(body)) {
       if (allowed.has(k)) setSetting(k, v);
     }

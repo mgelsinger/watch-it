@@ -126,6 +126,8 @@ export interface TitleDetail extends Card {
   user_rating: number | null;
   notes: string | null;
   user_watched_at: string | null;
+  /** 1 = excluded from Pick For Me suggestions. */
+  never_suggest: number | null;
   seasons: Season[];
   cast: CastMember[];
   availability: Availability[];
@@ -211,6 +213,50 @@ export interface Provider {
   provider_name: string;
   logo_path: string | null;
   enabled: boolean;
+}
+
+// ---- Pick For Me ----
+
+export interface PickConstraints {
+  /** Minutes; null or >= 120 ("2h+" / "No limit") disables the budget filter. */
+  time: number | null;
+  type: 'episode' | 'movie' | 'either';
+  genres: string[]; // merged genre keys (mood chips)
+  my_services_only: boolean;
+  include_rent_buy: boolean;
+  unwatched_only: boolean;
+  bingeable_only: boolean;
+}
+
+export interface PickCandidate {
+  title_id: number;
+  media_type: MediaType;
+  name: string;
+  year: number | null;
+  poster_path: string | null;
+  kind: 'continue' | 'start' | 'rewatch';
+  episode_id: number | null;
+  season_number: number | null;
+  episode_number: number | null;
+  episode_name: string | null;
+  runtime: number;
+  runtime_estimated: boolean;
+  fits_episodes: number | null;
+  providers: { name: string; offer_type: string }[];
+  rent_buy_only: boolean;
+  reasons: string[];
+}
+
+export interface PickLoosen {
+  label: string;
+  patch: Partial<PickConstraints>;
+}
+
+export interface PickResult {
+  candidate: PickCandidate | null;
+  pool_size: number;
+  exhausted?: boolean;
+  empty?: { message: string; loosen: PickLoosen[] };
 }
 
 export interface SyncState {

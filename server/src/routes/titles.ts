@@ -18,6 +18,7 @@ const StateBodyZ = z.object({
   user_rating: z.number().int().min(1).max(10).nullable().optional(),
   notes: z.string().nullable().optional(),
   watched: z.boolean().optional(), // movies only
+  never_suggest: z.boolean().optional(), // excludes the title from Pick For Me
 });
 
 export async function titleRoutes(app: FastifyInstance): Promise<void> {
@@ -121,6 +122,10 @@ export async function titleRoutes(app: FastifyInstance): Promise<void> {
     if (body.notes !== undefined) {
       sets.push('notes = ?');
       vals.push(body.notes);
+    }
+    if (body.never_suggest !== undefined) {
+      sets.push('never_suggest = ?');
+      vals.push(body.never_suggest ? 1 : 0);
     }
     if (body.watched !== undefined) {
       sets.push('watched_at = ?');

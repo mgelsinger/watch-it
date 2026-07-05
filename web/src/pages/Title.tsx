@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { api, countdown, fmtDate, img, useApi } from '../api';
 import type { Availability, CastMember, Cadence, Episode, Season, TitleDetail, UserStatus } from '../types';
 import Scores from '../components/Scores';
@@ -17,10 +17,10 @@ function parseCadence(raw: string | null): Cadence | null {
   }
 }
 
-function EpisodeRow({ ep, onToggle }: { ep: Episode; onToggle: (ep: Episode, watched: boolean) => void }) {
+function EpisodeRow({ ep, anchored, onToggle }: { ep: Episode; anchored?: boolean; onToggle: (ep: Episode, watched: boolean) => void }) {
   const future = !!ep.air_date && ep.air_date > new Date().toLocaleDateString('en-CA');
   return (
-    <div className={`ep ${future ? 'future' : ''}`}>
+    <div id={`ep-${ep.id}`} className={`ep ${future ? 'future' : ''} ${anchored ? 'anchored' : ''}`}>
       <input
         type="checkbox"
         checked={!!ep.watched_at}
@@ -36,9 +36,10 @@ function EpisodeRow({ ep, onToggle }: { ep: Episode; onToggle: (ep: Episode, wat
   );
 }
 
-function SeasonBlock({ season, defaultOpen, onToggleEp, onToggleSeason }: {
+function SeasonBlock({ season, defaultOpen, anchorEp, onToggleEp, onToggleSeason }: {
   season: Season;
   defaultOpen: boolean;
+  anchorEp?: number | null;
   onToggleEp: (ep: Episode, watched: boolean) => void;
   onToggleSeason: (season: Season, watched: boolean) => void;
 }) {
@@ -61,7 +62,7 @@ function SeasonBlock({ season, defaultOpen, onToggleEp, onToggleSeason }: {
         </button>
       </summary>
       {season.episodes.map((ep) => (
-        <EpisodeRow key={ep.id} ep={ep} onToggle={onToggleEp} />
+        <EpisodeRow key={ep.id} ep={ep} anchored={ep.id === anchorEp} onToggle={onToggleEp} />
       ))}
     </details>
   );
@@ -69,9 +70,17 @@ function SeasonBlock({ season, defaultOpen, onToggleEp, onToggleSeason }: {
 
 export default function Title() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const anchorEp = Number(searchParams.get('ep')) || null; // Pick For Me lands on the suggested episode
   const { data, loading, error, setData, reload } = useApi<TitleDetail>(`/api/titles/${id}`);
   const [refreshing, setRefreshing] = useState(false);
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!data || !anchorEp) return;
+    document.getElementById(`ep-${anchorEp}`)?.scrollIntoView({ block: 'center' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.id, anchorEp]);
 
   // Lazily resolve IMDb ids for cast on first view.
   useEffect(() => {
@@ -195,6 +204,9 @@ export default function Title() {
                   <input type="checkbox" checked={!!t.user_watched_at} onChange={(e) => void patchState({ watched: e.target.checked })} /> watched
                 </label>
               )}
+              <label className="pill" style={{ cursor: 'pointer' }} title="Exclude from Pick For Me suggestions">
+                <input type="checkbox" checked={!!t.never_suggest} onChange={(e) => void patchState({ never_suggest: e.target.checked })} /> never suggest
+              </label>
               <select
                 value={t.user_rating ?? ''}
                 onChange={(e) => void patchState({ user_rating: e.target.value ? Number(e.target.value) : null })}
@@ -261,7 +273,12 @@ export default function Title() {
                   <SeasonBlock
                     key={s.id}
                     season={s}
-                    defaultOpen={t.next_unwatched ? s.episodes.some((e) => e.id === t.next_unwatched!.id) : false}
+                    defaultOpen={
+                      anchorEp
+                        ? s.episodes.some((e) => e.id === anchorEp)
+                        : t.next_unwatched ? s.episodes.some((e) => e.id === t.next_unwatched!.id) : false
+                    }
+                    anchorEp={anchorEp}
                     onToggleEp={(ep, w) => void toggleEpisode(ep, w)}
                     onToggleSeason={(se, w) => void toggleSeason(se, w)}
                   />

@@ -34,6 +34,11 @@ export default function Home() {
 
   return (
     <>
+      <Link to="/pick" className="pick-cta">
+        🎲 Pick For Me Tonight
+        <span className="pick-cta-sub">Tell it how much time you have — it picks, you watch.</span>
+      </Link>
+
       {totalTracked === 0 && (
         <div className="empty">
           <h3>Welcome to watch-it</h3>

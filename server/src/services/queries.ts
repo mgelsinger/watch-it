@@ -311,7 +311,7 @@ export function titleDetail(titleId: number): unknown | null {
   const d = db();
   const title = d
     .prepare(`
-      SELECT t.*, us.status AS user_status, us.user_rating, us.notes, us.watched_at AS user_watched_at, us.updated_at AS state_updated_at
+      SELECT t.*, us.status AS user_status, us.user_rating, us.notes, us.watched_at AS user_watched_at, us.updated_at AS state_updated_at, us.never_suggest
       FROM titles t LEFT JOIN user_state us ON us.title_id = t.id
       WHERE t.id = ?
     `)
