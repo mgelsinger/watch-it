@@ -8,7 +8,7 @@ import { fetchBytes } from '../http.js';
 import * as tmdb from '../sources/tmdb.js';
 import * as omdb from '../sources/omdb.js';
 import * as tvmaze from '../sources/tvmaze.js';
-import { syncState, kickGlobalRefresh, refreshTvmazeSchedule, refreshTheaterLists } from '../services/sync.js';
+import { syncState, kickGlobalRefresh, refreshTvmazeSchedule, refreshDiscoveryLists, discoveryCacheKeys } from '../services/sync.js';
 import * as q from '../services/queries.js';
 
 const EXPORT_TABLES = [
@@ -24,23 +24,25 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
 
   // ---- home ----
   app.get('/api/home', async () => {
-    // Populate theater lists on first view if the daily job hasn't run yet.
+    // Discovery rows are stale-while-revalidate: serve the cache instantly and
+    // refresh in the background. Only block on the very first view, when there
+    // is no cache to serve yet.
     if (tmdb.tmdbConfigured()) {
-      try {
-        await refreshTheaterLists();
-      } catch (err) {
-        console.warn('[home] theater lists refresh failed (serving cache):', (err as Error).message);
-      }
+      const keys = discoveryCacheKeys();
+      const hasCache = [keys.movies, keys.tv, keys.disc].some((k) => cacheGet(k, Infinity) !== null);
+      const refresh = refreshDiscoveryLists().catch((err) =>
+        console.warn('[home] discovery lists refresh failed (serving cache):', (err as Error).message),
+      );
+      if (!hasCache) await refresh;
     }
-    const theaters = q.theaterRows();
     return {
       continue_watching: q.continueWatching(),
       new_tonight: q.newTonight(),
       returning_soon: q.returningSoon(),
       wishlist_available: q.wishlistAvailable(),
       now_streaming: q.nowStreamingRow(),
-      in_theaters: theaters.inTheaters,
-      coming_soon: theaters.comingSoon,
+      new_on_services: q.newOnServicesRow(),
+      new_disc_digital: q.newDiscDigitalRow(),
       recently_watched: q.recentlyWatched(),
     };
   });

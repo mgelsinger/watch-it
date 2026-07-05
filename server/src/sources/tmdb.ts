@@ -62,6 +62,21 @@ const WatchProvidersZ = z.object({ results: z.record(RegionOffersZ).default({}) 
 
 const ExternalIdsZ = z.object({ imdb_id: z.string().nullish() }).passthrough();
 
+const ReleaseDatesZ = z
+  .object({
+    results: z
+      .array(
+        z
+          .object({
+            iso_3166_1: z.string(),
+            release_dates: z.array(z.object({ type: z.number(), release_date: z.string() }).passthrough()).default([]),
+          })
+          .passthrough(),
+      )
+      .default([]),
+  })
+  .passthrough();
+
 export const MovieDetailsZ = z
   .object({
     id: z.number(),
@@ -78,6 +93,7 @@ export const MovieDetailsZ = z
     external_ids: ExternalIdsZ.optional(),
     credits: z.object({ cast: z.array(CastZ).default([]) }).passthrough().optional(),
     'watch/providers': WatchProvidersZ.optional(),
+    release_dates: ReleaseDatesZ.optional(),
   })
   .passthrough();
 
@@ -136,6 +152,7 @@ const ListEntryZ = z
     title: z.string().optional(),
     name: z.string().optional(),
     release_date: z.string().nullish(),
+    first_air_date: z.string().nullish(),
     poster_path: z.string().nullish(),
     vote_average: z.number().nullish(),
     overview: z.string().nullish(),
@@ -166,7 +183,7 @@ export async function searchMulti(query: string): Promise<unknown[]> {
 }
 
 export async function movieDetails(id: number): Promise<MovieDetails> {
-  const raw = await tmdb(`/movie/${id}`, { append_to_response: 'external_ids,credits,watch/providers' });
+  const raw = await tmdb(`/movie/${id}`, { append_to_response: 'external_ids,credits,watch/providers,release_dates' });
   return MovieDetailsZ.parse(raw);
 }
 
@@ -195,14 +212,57 @@ export async function personImdbId(personId: number): Promise<string | null> {
   return ExternalIdsZ.parse(raw).imdb_id ?? null;
 }
 
-export async function nowPlaying(region: string): Promise<z.infer<typeof ListEntryZ>[]> {
-  const raw = await tmdb('/movie/now_playing', { region });
+export type ListEntry = z.infer<typeof ListEntryZ>;
+export type RegionReleaseDates = z.infer<typeof ReleaseDatesZ>['results'];
+
+/**
+ * Movies that recently got a digital release on one of the user's services.
+ * TMDB has no "date added to provider" signal, so recent release date
+ * intersected with current provider availability is the closest honest proxy
+ * (correct for streaming originals and day-and-date releases).
+ */
+export async function discoverNewMoviesOnServices(region: string, providerIds: number[], from: string, to: string): Promise<ListEntry[]> {
+  const raw = await tmdb('/discover/movie', {
+    watch_region: region,
+    with_watch_providers: providerIds.join('|'),
+    with_watch_monetization_types: 'flatrate|free|ads',
+    with_release_type: '4',
+    'release_date.gte': from,
+    'release_date.lte': to,
+    sort_by: 'primary_release_date.desc',
+  });
   return ListPageZ.parse(raw).results;
 }
 
-export async function upcoming(region: string): Promise<z.infer<typeof ListEntryZ>[]> {
-  const raw = await tmdb('/movie/upcoming', { region });
+/** TV that recently premiered and is on one of the user's services. */
+export async function discoverNewTvOnServices(region: string, providerIds: number[], from: string, to: string): Promise<ListEntry[]> {
+  const raw = await tmdb('/discover/tv', {
+    watch_region: region,
+    with_watch_providers: providerIds.join('|'),
+    with_watch_monetization_types: 'flatrate|free|ads',
+    'first_air_date.gte': from,
+    'first_air_date.lte': to,
+    sort_by: 'first_air_date.desc',
+  });
   return ListPageZ.parse(raw).results;
+}
+
+/** Movies with a recent digital (4) or physical/Blu-ray (5) release in the region. */
+export async function discoverDiscAndDigital(region: string, from: string, to: string): Promise<ListEntry[]> {
+  const raw = await tmdb('/discover/movie', {
+    region,
+    with_release_type: '4|5',
+    'release_date.gte': from,
+    'release_date.lte': to,
+    sort_by: 'primary_release_date.desc',
+  });
+  return ListPageZ.parse(raw).results;
+}
+
+/** Per-region release date entries for a movie (types: 4 = Digital, 5 = Physical). */
+export async function movieReleaseDates(id: number): Promise<RegionReleaseDates> {
+  const raw = await tmdb(`/movie/${id}/release_dates`);
+  return ReleaseDatesZ.parse(raw).results;
 }
 
 export async function providerList(region: string): Promise<z.infer<typeof ProviderZ>[]> {

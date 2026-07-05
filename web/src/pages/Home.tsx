@@ -1,11 +1,19 @@
 import { Link } from 'react-router-dom';
 import { api, countdown, fmtDate, useApi } from '../api';
-import type { Card, HomeData, TheaterCard } from '../types';
+import type { Card, DiscoveryCard, HomeData } from '../types';
 import Row from '../components/Row';
 import PosterCard from '../components/PosterCard';
 
 function cardScores(c: Card) {
   return { rt: c.rt_score, imdb: c.imdb_rating, mc: c.metacritic, tmdb: c.tmdb_rating };
+}
+
+function discSub(c: DiscoveryCard): string | undefined {
+  const parts: string[] = [];
+  if (c.digital_date) parts.push(`Digital ${fmtDate(c.digital_date)}`);
+  if (c.physical_date) parts.push(`Blu-ray ${fmtDate(c.physical_date)}`);
+  if (parts.length === 0 && c.date) parts.push(fmtDate(c.date));
+  return parts.join(' · ') || undefined;
 }
 
 export default function Home() {
@@ -19,8 +27,8 @@ export default function Home() {
     data.continue_watching.length + data.wishlist_available.length + data.returning_soon.length +
     data.recently_watched.length + data.new_tonight.length;
 
-  const addTheaterMovie = async (m: TheaterCard) => {
-    await api('/api/titles', { json: { tmdb_id: m.tmdb_id, media_type: 'movie', status: 'wishlist' } });
+  const addToWishlist = async (c: DiscoveryCard) => {
+    await api('/api/titles', { json: { tmdb_id: c.tmdb_id, media_type: c.media_type, status: 'wishlist' } });
     reload();
   };
 
@@ -93,27 +101,28 @@ export default function Home() {
           scores={cardScores(c)} offers={c.my_offers} />
       ))} />
 
-      <Row title="In Theaters" empty={undefined} children={data.in_theaters.map((m) => (
+      <Row title="New on Your Services" children={data.new_on_services.map((c) => (
         <PosterCard
-          key={m.tmdb_id}
-          linkId={m.library_id}
-          name={m.name}
-          posterPath={m.poster_path}
-          sub={m.release_date ? fmtDate(m.release_date) : undefined}
-          scores={{ tmdb: m.tmdb_rating }}
-          onAdd={m.library_id ? undefined : () => void addTheaterMovie(m)}
+          key={`${c.media_type}:${c.tmdb_id}`}
+          linkId={c.library_id}
+          name={c.name}
+          posterPath={c.poster_path}
+          sub={c.date ? fmtDate(c.date) : undefined}
+          flag={c.new_season ? 'New season' : undefined}
+          scores={{ tmdb: c.tmdb_rating }}
+          onAdd={c.library_id ? undefined : () => void addToWishlist(c)}
         />
       ))} />
 
-      <Row title="Coming to Theaters" children={data.coming_soon.map((m) => (
+      <Row title="New to Blu-ray & Digital" children={data.new_disc_digital.map((c) => (
         <PosterCard
-          key={m.tmdb_id}
-          linkId={m.library_id}
-          name={m.name}
-          posterPath={m.poster_path}
-          sub={m.release_date ? fmtDate(m.release_date) : undefined}
-          scores={{ tmdb: m.tmdb_rating }}
-          onAdd={m.library_id ? undefined : () => void addTheaterMovie(m)}
+          key={`${c.media_type}:${c.tmdb_id}`}
+          linkId={c.library_id}
+          name={c.name}
+          posterPath={c.poster_path}
+          sub={discSub(c)}
+          scores={{ tmdb: c.tmdb_rating }}
+          onAdd={c.library_id ? undefined : () => void addToWishlist(c)}
         />
       ))} />
 

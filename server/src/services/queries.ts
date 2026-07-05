@@ -1,5 +1,8 @@
 import { getDb, getSetting, cacheGet } from '../db.js';
 import { localToday } from '../config.js';
+import { discoveryCacheKeys } from './sync.js';
+import { getReleaseDates } from './releaseDates.js';
+import type { ListEntry } from '../sources/tmdb.js';
 
 const CARD_COLS = `t.id, t.tmdb_id, t.media_type, t.imdb_id, t.name, t.year, t.poster_path,
   t.tmdb_rating, t.imdb_rating, t.rt_score, t.metacritic, t.status_upstream, t.release_cadence`;
@@ -148,37 +151,116 @@ export function recentlyWatched(): CardRow[] {
   return attachMyOffers(rows);
 }
 
-/** TMDB now_playing / upcoming lists from cache, flagged with library membership. */
-export function theaterRows(): { inTheaters: unknown[]; comingSoon: unknown[] } {
-  const region = getSetting('region');
-  const map = (payload: unknown): unknown[] => {
-    if (!Array.isArray(payload)) return [];
-    const tmdbIds = payload.map((m) => (m as { id: number }).id);
-    const inLib = new Map<number, number>();
-    if (tmdbIds.length > 0) {
-      const rows = db()
-        .prepare(`SELECT id, tmdb_id FROM titles WHERE media_type = 'movie' AND tmdb_id IN (${tmdbIds.map(() => '?').join(',')})`)
-        .all(...tmdbIds) as { id: number; tmdb_id: number }[];
-      for (const r of rows) inLib.set(r.tmdb_id, r.id);
-    }
-    return payload.map((m) => {
-      const e = m as Record<string, unknown>;
-      return {
-        tmdb_id: e.id,
-        media_type: 'movie',
-        name: e.title ?? e.name,
-        poster_path: e.poster_path ?? null,
-        release_date: e.release_date ?? null,
-        tmdb_rating: e.vote_average ?? null,
-        overview: e.overview ?? null,
-        library_id: inLib.get(e.id as number) ?? null,
-      };
+export interface DiscoveryCard {
+  tmdb_id: number;
+  media_type: 'movie' | 'tv';
+  name: string;
+  poster_path: string | null;
+  date: string | null; // release date (movie) or premiere date (tv/new season)
+  tmdb_rating: number | null;
+  overview: string | null;
+  library_id: number | null;
+  new_season?: boolean; // tracked show surfacing via a recent season premiere
+  digital_date?: string | null; // disc row: TMDB release type 4
+  physical_date?: string | null; // disc row: TMDB release type 5
+}
+
+function libraryIdsFor(mediaType: 'movie' | 'tv', tmdbIds: number[]): Map<number, number> {
+  const inLib = new Map<number, number>();
+  if (tmdbIds.length === 0) return inLib;
+  const rows = db()
+    .prepare(`SELECT id, tmdb_id FROM titles WHERE media_type = ? AND tmdb_id IN (${tmdbIds.map(() => '?').join(',')})`)
+    .all(mediaType, ...tmdbIds) as { id: number; tmdb_id: number }[];
+  for (const r of rows) inLib.set(r.tmdb_id, r.id);
+  return inLib;
+}
+
+function mapDiscoverEntries(payload: unknown, mediaType: 'movie' | 'tv'): DiscoveryCard[] {
+  if (!Array.isArray(payload)) return [];
+  const entries = payload as ListEntry[];
+  const inLib = libraryIdsFor(mediaType, entries.map((e) => e.id));
+  return entries.map((e) => ({
+    tmdb_id: e.id,
+    media_type: mediaType,
+    name: e.title ?? e.name ?? '(untitled)',
+    poster_path: e.poster_path ?? null,
+    date: (mediaType === 'movie' ? e.release_date : e.first_air_date) ?? null,
+    tmdb_rating: e.vote_average ?? null,
+    overview: e.overview ?? null,
+    library_id: inLib.get(e.id) ?? null,
+  }));
+}
+
+/**
+ * "New on Your Services": TMDB Discover results (recent release/premiere on an
+ * enabled provider) merged with tracked shows whose newest season premiered in
+ * the window, so returning originals surface, not just brand-new series.
+ * TMDB has no "date added to provider" signal; recent release dates intersected
+ * with current availability is the honest approximation (correct for streaming
+ * originals and day-and-date releases, the target use case).
+ */
+export function newOnServicesRow(): DiscoveryCard[] {
+  const keys = discoveryCacheKeys();
+  const cards = [
+    ...mapDiscoverEntries(cacheGet(keys.movies, Infinity)?.payload ?? [], 'movie'),
+    ...mapDiscoverEntries(cacheGet(keys.tv, Infinity)?.payload ?? [], 'tv'),
+  ];
+
+  const today = localToday();
+  const cutoff = localToday(-30);
+  const returning = db()
+    .prepare(`
+      SELECT t.id, t.tmdb_id, t.name, t.poster_path, t.tmdb_rating, t.overview, MAX(s.air_date) AS newest_season_air
+      FROM titles t
+      JOIN user_state us ON us.title_id = t.id AND us.status != 'dropped'
+      JOIN seasons s ON s.title_id = t.id AND s.season_number > 0 AND s.air_date IS NOT NULL
+      WHERE t.media_type = 'tv'
+        AND EXISTS (
+          SELECT 1 FROM availability a
+          JOIN my_services m ON m.provider_id = a.provider_id AND m.enabled = 1
+          WHERE a.title_id = t.id AND a.active = 1 AND a.offer_type IN ('flatrate','free','ads')
+        )
+      GROUP BY t.id
+      HAVING newest_season_air >= ? AND newest_season_air <= ?
+    `)
+    .all(cutoff, today) as { id: number; tmdb_id: number; name: string; poster_path: string | null; tmdb_rating: number | null; overview: string | null; newest_season_air: string }[];
+  for (const r of returning) {
+    cards.push({
+      tmdb_id: r.tmdb_id,
+      media_type: 'tv',
+      name: r.name,
+      poster_path: r.poster_path,
+      date: r.newest_season_air,
+      tmdb_rating: r.tmdb_rating,
+      overview: r.overview,
+      library_id: r.id,
+      new_season: true,
     });
-  };
-  return {
-    inTheaters: map(cacheGet(`tmdb_now_playing:${region}`, Infinity)?.payload ?? []),
-    comingSoon: map(cacheGet(`tmdb_upcoming:${region}`, Infinity)?.payload ?? []),
-  };
+  }
+
+  const seen = new Set<string>();
+  return cards
+    .filter((c) => {
+      const key = `${c.media_type}:${c.tmdb_id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
+    .slice(0, 25);
+}
+
+/** "New to Blu-ray & Digital": recent type-4/5 releases with per-type date badges. */
+export function newDiscDigitalRow(): DiscoveryCard[] {
+  const region = getSetting('region');
+  const cards = mapDiscoverEntries(cacheGet(discoveryCacheKeys().disc, Infinity)?.payload ?? [], 'movie').slice(0, 20);
+  for (const c of cards) {
+    for (const rd of getReleaseDates(c.tmdb_id, region)) {
+      if (rd.type === 4) c.digital_date = rd.date;
+      if (rd.type === 5) c.physical_date = rd.date;
+    }
+  }
+  return cards;
 }
 
 export function history(filter: { year?: number; type?: 'movie' | 'tv' }): { items: unknown[]; stats: unknown } {
@@ -279,6 +361,17 @@ export function titleDetail(titleId: number): unknown | null {
     `)
     .get(titleId, today);
 
+  // True launch dates for initial-sync availability rows: a movie's regional
+  // digital release, or a show's premiere (earliest real-season air date).
+  const region = getSetting('region');
+  const releaseDates = title.media_type === 'movie' ? getReleaseDates(title.tmdb_id as number, region) : [];
+  const premiere =
+    title.media_type === 'tv'
+      ? ((d
+          .prepare('SELECT MIN(air_date) AS premiere FROM seasons WHERE title_id = ? AND season_number > 0 AND air_date IS NOT NULL')
+          .get(titleId) as { premiere: string | null }).premiere ?? null)
+      : null;
+
   return {
     ...title,
     seasons,
@@ -288,7 +381,9 @@ export function titleDetail(titleId: number): unknown | null {
     my_service_ids: myServices.map((m) => m.provider_id),
     next_unwatched: nextUnwatched ?? null,
     next_airing: nextAiring ?? null,
-    region: getSetting('region'),
+    region,
+    release_dates: releaseDates,
+    premiere_date: premiere,
   };
 }
 

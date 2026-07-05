@@ -5,6 +5,8 @@ import * as tmdb from '../sources/tmdb.js';
 import * as omdb from '../sources/omdb.js';
 import * as tvmaze from '../sources/tvmaze.js';
 import { refreshTitle, refreshProviders, refreshRatings, emitTonightEvents } from './library.js';
+import { enabledServiceIds } from './availability.js';
+import { ensureReleaseDates } from './releaseDates.js';
 
 // ---- in-memory progress, exposed at /api/sync/status ----
 
@@ -82,14 +84,54 @@ async function eachTitle(ids: number[], fn: (id: number) => Promise<void>): Prom
 const DAY = 86400_000;
 const HOUR = 3600_000;
 
-export async function refreshTheaterLists(force = false): Promise<void> {
+const NEW_ON_SERVICES_DAYS = 30;
+const DISC_DIGITAL_DAYS = 45;
+const DISC_ROW_LIMIT = 20;
+
+/**
+ * Cache keys for the two discovery rows. Provider ids are part of the
+ * new-on-services keys so toggling services in Settings invalidates naturally.
+ */
+export function discoveryCacheKeys(): { movies: string; tv: string; disc: string } {
+  const region = getSetting('region');
+  const prov = [...enabledServiceIds()].sort((a, b) => a - b).join('|');
+  return {
+    movies: `tmdb_new_on_services_movies:${region}:${prov}`,
+    tv: `tmdb_new_on_services_tv:${region}:${prov}`,
+    disc: `tmdb_disc_digital:${region}`,
+  };
+}
+
+/** Discovery rows: "New on Your Services" + "New to Blu-ray & Digital". */
+export async function refreshDiscoveryLists(force = false): Promise<void> {
   if (!tmdb.tmdbConfigured()) return;
   const region = getSetting('region');
-  if (force || !cacheGet(`tmdb_now_playing:${region}`, DAY)?.fresh) {
-    cacheSet(`tmdb_now_playing:${region}`, await tmdb.nowPlaying(region));
+  const keys = discoveryCacheKeys();
+  const today = localToday();
+  const providerIds = [...enabledServiceIds()];
+
+  if (providerIds.length > 0) {
+    const from = localToday(-NEW_ON_SERVICES_DAYS);
+    if (force || !cacheGet(keys.movies, DAY)?.fresh) {
+      cacheSet(keys.movies, await tmdb.discoverNewMoviesOnServices(region, providerIds, from, today));
+    }
+    if (force || !cacheGet(keys.tv, DAY)?.fresh) {
+      cacheSet(keys.tv, await tmdb.discoverNewTvOnServices(region, providerIds, from, today));
+    }
   }
-  if (force || !cacheGet(`tmdb_upcoming:${region}`, DAY)?.fresh) {
-    cacheSet(`tmdb_upcoming:${region}`, await tmdb.upcoming(region));
+
+  if (force || !cacheGet(keys.disc, DAY)?.fresh) {
+    const movies = await tmdb.discoverDiscAndDigital(region, localToday(-DISC_DIGITAL_DAYS), today);
+    cacheSet(keys.disc, movies);
+    // Digital/Blu-ray badges need per-movie release dates; ensure* refetches at
+    // most weekly per movie, so this stays cheap across daily runs.
+    for (const m of movies.slice(0, DISC_ROW_LIMIT)) {
+      try {
+        await ensureReleaseDates(m.id, region);
+      } catch (err) {
+        console.warn(`[sync] release dates for tmdb:${m.id} failed:`, (err as Error).message);
+      }
+    }
   }
 }
 
@@ -134,7 +176,7 @@ export async function runHourly(): Promise<void> {
   });
 }
 
-/** Daily (~4am): metadata for non-ended titles, providers for everything tracked, theater lists. */
+/** Daily (~4am): metadata for non-ended titles, providers for everything tracked, discovery rows. */
 export async function runDaily(): Promise<void> {
   if (!tmdb.tmdbConfigured()) return;
   await scoped('tmdb', 'daily:metadata', async () => {
@@ -148,7 +190,7 @@ export async function runDaily(): Promise<void> {
     const ids = trackedTitleIds("us.status IN ('dropped','watched') OR t.status_upstream IN ('Ended','Canceled')");
     await eachTitle(ids, refreshProviders);
   });
-  await scoped('tmdb', 'daily:theater-lists', () => refreshTheaterLists(true));
+  await scoped('tmdb', 'daily:discovery-lists', () => refreshDiscoveryLists(true));
   await scoped('app', 'daily:events', async () => emitTonightEvents());
 }
 

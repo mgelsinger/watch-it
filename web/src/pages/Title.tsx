@@ -96,14 +96,35 @@ export default function Title() {
   })();
   const cadence = parseCadence(t.release_cadence);
   const activeOffers = t.availability.filter((a) => a.active);
+
+  // initial_sync rows come from the title's first provider snapshot: their
+  // first_seen is when tracking started, not when the title hit the service.
+  // Only initial_sync = 0 rows are genuine, observed arrivals.
+  const initialRows = t.availability.filter((a) => a.initial_sync);
   const historyRows = t.availability
     .flatMap((a) => {
-      const rows: { date: string; text: string }[] = [{ date: a.first_seen, text: `Arrived on ${a.provider_name} (${OFFER_LABEL[a.offer_type]})` }];
+      const rows: { date: string; text: string }[] = [];
+      if (!a.initial_sync) rows.push({ date: a.first_seen, text: `Arrived on ${a.provider_name} (${OFFER_LABEL[a.offer_type]})` });
       if (!a.active) rows.push({ date: a.last_seen, text: `Left ${a.provider_name} (${OFFER_LABEL[a.offer_type]})` });
       return rows;
-    })
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 30);
+    });
+  if (initialRows.length > 0) {
+    const names = [...new Set(initialRows.map((a) => a.provider_name))];
+    historyRows.push({
+      date: initialRows.map((a) => a.first_seen).sort()[0],
+      text: `Tracking started — already on ${names.join(', ')}`,
+    });
+  }
+  historyRows.sort((a, b) => b.date.localeCompare(a.date));
+  const timeline = historyRows.slice(0, 30);
+
+  const digitalDate = t.media_type === 'movie' ? t.release_dates?.find((r) => r.type === 4)?.date ?? null : null;
+  // One dated line per streaming provider; prefer observed-arrival rows since
+  // those carry a date the app actually saw happen.
+  const streamDates = [...activeOffers]
+    .filter((a) => ['flatrate', 'free', 'ads'].includes(a.offer_type))
+    .sort((a, b) => a.initial_sync - b.initial_sync)
+    .filter((a, i, arr) => arr.findIndex((x) => x.provider_id === a.provider_id) === i);
 
   const patchState = async (body: Record<string, unknown>) => {
     setData(await api<TitleDetail>(`/api/titles/${t.id}/state`, { method: 'PATCH', json: body }));
@@ -303,14 +324,27 @@ export default function Title() {
                 </div>
               </div>
             ))}
+            {(digitalDate || (t.media_type === 'tv' && t.premiere_date) || streamDates.length > 0) && (
+              <div style={{ marginBottom: 8 }}>
+                {t.media_type === 'movie' && digitalDate && <div>Digital release: {fmtDate(digitalDate)}</div>}
+                {t.media_type === 'tv' && t.premiere_date && <div>Premiered: {fmtDate(t.premiere_date)}</div>}
+                {streamDates.map((a) => (
+                  <div key={a.provider_id} className="faint">
+                    {a.initial_sync
+                      ? `On ${a.provider_name} since at least ${fmtDate(a.first_seen)}`
+                      : `Arrived on ${a.provider_name} ${fmtDate(a.first_seen)}`}
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="faint">watch-provider data by JustWatch</div>
           </div>
 
           <div className="panel">
             <h3>Availability History</h3>
-            {historyRows.length === 0 && <p className="muted" style={{ margin: 0 }}>No availability seen yet.</p>}
+            {timeline.length === 0 && <p className="muted" style={{ margin: 0 }}>No availability seen yet.</p>}
             <div className="timeline">
-              {historyRows.map((h, i) => (
+              {timeline.map((h, i) => (
                 <div className="tl-item" key={i}>
                   <span className="tl-date">{fmtDate(h.date)}</span>
                   <span>{h.text}</span>

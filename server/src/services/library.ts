@@ -5,6 +5,7 @@ import * as omdb from '../sources/omdb.js';
 import { QuotaError } from '../http.js';
 import { classifyTitle } from './cadence.js';
 import { applyProviders } from './availability.js';
+import { upsertReleaseDates } from './releaseDates.js';
 import { emitEvent, eventExists } from './events.js';
 
 export type MediaType = 'movie' | 'tv';
@@ -147,7 +148,7 @@ async function fetchAndStore(
   tmdbId: number,
   mediaType: MediaType,
   existingId: number | null,
-  opts: { emitAvailabilityEvents: boolean },
+  opts: { initialSync: boolean },
 ): Promise<number> {
   const db = getDb();
   const now = nowIso();
@@ -177,6 +178,7 @@ async function fetchAndStore(
       providers: d['watch/providers']?.results ?? {},
       cast: d.credits?.cast ?? [],
     };
+    upsertReleaseDates(tmdbId, getSetting('region'), d.release_dates?.results ?? []);
   } else {
     const d = await tmdb.tvDetails(tmdbId);
     tvPayload = d;
@@ -219,11 +221,7 @@ async function fetchAndStore(
   }
 
   upsertCast(titleId, common.cast);
-  applyProviders(titleId, common.providers, { emitEvents: opts.emitAvailabilityEvents });
-
-  if (common.status === 'In Theaters' && !eventExists(titleId, 'now_in_theaters')) {
-    emitEvent(titleId, 'now_in_theaters', { title_name: common.name });
-  }
+  applyProviders(titleId, common.providers, { initialSync: opts.initialSync });
 
   if (tvPayload) await syncTvSeasons(titleId, tvPayload);
   return titleId;
@@ -237,8 +235,8 @@ export async function addTitle(tmdbId: number, mediaType: MediaType, status: Use
     .get(tmdbId, mediaType) as { id: number } | undefined;
   if (existing) return existing.id;
 
-  // Initial availability snapshot must not spam "arrived" events.
-  const titleId = await fetchAndStore(tmdbId, mediaType, null, { emitAvailabilityEvents: false });
+  // Initial availability snapshot: flagged initial_sync, no "arrived" events.
+  const titleId = await fetchAndStore(tmdbId, mediaType, null, { initialSync: true });
   db.prepare('INSERT OR IGNORE INTO user_state (title_id, status, updated_at) VALUES (?, ?, ?)').run(titleId, status, nowIso());
   await refreshRatings(titleId); // best effort; quota-aware
   return titleId;
@@ -251,7 +249,7 @@ export async function refreshTitle(titleId: number): Promise<void> {
     | Pick<TitleRow, 'id' | 'tmdb_id' | 'media_type' | 'ratings_refreshed_at'>
     | undefined;
   if (!title) throw new Error(`title ${titleId} not found`);
-  await fetchAndStore(title.tmdb_id, title.media_type, title.id, { emitAvailabilityEvents: true });
+  await fetchAndStore(title.tmdb_id, title.media_type, title.id, { initialSync: false });
   const staleBefore = Date.now() - 7 * 86400_000;
   if (!title.ratings_refreshed_at || Date.parse(title.ratings_refreshed_at) < staleBefore) {
     await refreshRatings(titleId);
@@ -266,7 +264,7 @@ export async function refreshProviders(titleId: number): Promise<void> {
     | undefined;
   if (!title) return;
   const providers = title.media_type === 'movie' ? await tmdb.movieProviders(title.tmdb_id) : await tmdb.tvProviders(title.tmdb_id);
-  applyProviders(titleId, providers, { emitEvents: true });
+  applyProviders(titleId, providers, { initialSync: false });
 }
 
 /** Lazily resolve IMDb person ids for a title's cast (first detail-page view). */

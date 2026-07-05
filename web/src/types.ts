@@ -33,15 +33,18 @@ export interface Card {
   watched_at?: string | null;
 }
 
-export interface TheaterCard {
+export interface DiscoveryCard {
   tmdb_id: number;
-  media_type: 'movie';
+  media_type: MediaType;
   name: string;
   poster_path: string | null;
-  release_date: string | null;
+  date: string | null; // release date (movie) or premiere date (tv/new season)
   tmdb_rating: number | null;
   overview: string | null;
   library_id: number | null;
+  new_season?: boolean;
+  digital_date?: string | null;
+  physical_date?: string | null;
 }
 
 export interface Episode {
@@ -87,6 +90,9 @@ export interface Availability {
   first_seen: string;
   last_seen: string;
   active: number;
+  /** 1 = row from the title's first provider snapshot: first_seen is when
+   *  tracking started, NOT when the title arrived on the service. */
+  initial_sync: number;
 }
 
 export interface EventRow {
@@ -128,6 +134,10 @@ export interface TitleDetail extends Card {
   next_unwatched: NextEpisode | null;
   next_airing: NextEpisode | null;
   region: string;
+  /** Regional release dates (movies): type 4 = Digital, 5 = Physical. */
+  release_dates: { type: number; date: string }[];
+  /** Earliest real-season air date (tv). */
+  premiere_date: string | null;
 }
 
 export interface SearchResult {
@@ -147,8 +157,8 @@ export interface HomeData {
   returning_soon: Card[];
   wishlist_available: Card[];
   now_streaming: Card[];
-  in_theaters: TheaterCard[];
-  coming_soon: TheaterCard[];
+  new_on_services: DiscoveryCard[];
+  new_disc_digital: DiscoveryCard[];
   recently_watched: Card[];
 }
 

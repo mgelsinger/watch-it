@@ -14,7 +14,7 @@ interface AvailabilityRow {
   active: number;
 }
 
-function enabledServiceIds(): Set<number> {
+export function enabledServiceIds(): Set<number> {
   const rows = getDb().prepare('SELECT provider_id FROM my_services WHERE enabled = 1').all() as { provider_id: number }[];
   return new Set(rows.map((r) => r.provider_id));
 }
@@ -24,11 +24,15 @@ function enabledServiceIds(): Set<number> {
  * Rows are never deleted: vanished offers get active=0 (history is kept).
  * Emits arrived_on_service / left_service for the user's enabled services, and
  * now_streaming for theater-pipeline titles gaining their first home offer.
+ *
+ * opts.initialSync: this is the title's first-ever provider snapshot. Rows get
+ * initial_sync = 1 (first_seen means "tracking started", not an arrival) and
+ * no events are emitted — a five-year-old Netflix title is not "arriving".
  */
 export function applyProviders(
   titleId: number,
   allRegions: Record<string, RegionOffers>,
-  opts: { emitEvents: boolean },
+  opts: { initialSync: boolean },
 ): void {
   const db = getDb();
   const region = getSetting('region');
@@ -66,15 +70,20 @@ export function applyProviders(
       const row = existingByKey.get(key);
       const isNewlyAvailable = !row || row.active === 0;
       if (row) {
-        db.prepare('UPDATE availability SET last_seen = ?, active = 1, provider_name = ?, logo_path = COALESCE(?, logo_path) WHERE id = ?')
-          .run(now, offer.providerName, offer.logoPath, row.id);
+        // Reactivation of a lapsed offer is an observed arrival: clear initial_sync
+        // (the CASE reads the pre-update active value).
+        db.prepare(`
+          UPDATE availability SET last_seen = ?, provider_name = ?, logo_path = COALESCE(?, logo_path),
+                 initial_sync = CASE WHEN active = 0 THEN 0 ELSE initial_sync END, active = 1
+          WHERE id = ?
+        `).run(now, offer.providerName, offer.logoPath, row.id);
       } else {
         db.prepare(
-          'INSERT INTO availability (title_id, provider_id, provider_name, logo_path, offer_type, region, first_seen, last_seen, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)',
-        ).run(titleId, offer.providerId, offer.providerName, offer.logoPath, offer.offerType, region, now, now);
+          'INSERT INTO availability (title_id, provider_id, provider_name, logo_path, offer_type, region, first_seen, last_seen, active, initial_sync) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)',
+        ).run(titleId, offer.providerId, offer.providerName, offer.logoPath, offer.offerType, region, now, now, opts.initialSync ? 1 : 0);
       }
       if (
-        opts.emitEvents &&
+        !opts.initialSync &&
         isNewlyAvailable &&
         myServices.has(offer.providerId) &&
         (offer.offerType === 'flatrate' || offer.offerType === 'free' || offer.offerType === 'ads')
@@ -92,7 +101,7 @@ export function applyProviders(
       if (fresh.has(key) || row.active === 0) continue;
       db.prepare('UPDATE availability SET active = 0, last_seen = ? WHERE id = ?').run(now, row.id);
       if (
-        opts.emitEvents &&
+        !opts.initialSync &&
         myServices.has(row.provider_id) &&
         (row.offer_type === 'flatrate' || row.offer_type === 'free' || row.offer_type === 'ads')
       ) {
