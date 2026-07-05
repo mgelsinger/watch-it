@@ -1,0 +1,25 @@
+services:
+  watch-it:
+    build: .
+    image: watch-it
+    container_name: watch-it
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8300}:8300"
+    environment:
+      TMDB_API_KEY: ${TMDB_API_KEY}
+      OMDB_API_KEY: ${OMDB_API_KEY:-}
+      DATA_DIR: /data
+      PORT: "8300"
+      TZ: ${TZ:-America/New_York}
+    volumes:
+      - watch-it-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8300/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  watch-it-data:
