@@ -7,6 +7,7 @@ import * as tvmaze from '../sources/tvmaze.js';
 import { refreshTitle, refreshProviders, refreshRatings, emitTonightEvents } from './library.js';
 import { enabledServiceIds } from './availability.js';
 import { ensureReleaseDates } from './releaseDates.js';
+import { refreshBrowseCaches } from './browse.js';
 
 // ---- in-memory progress, exposed at /api/sync/status ----
 
@@ -191,6 +192,7 @@ export async function runDaily(): Promise<void> {
     await eachTitle(ids, refreshProviders);
   });
   await scoped('tmdb', 'daily:discovery-lists', () => refreshDiscoveryLists(true));
+  await scoped('tmdb', 'daily:browse-caches', () => refreshBrowseCaches());
   await scoped('app', 'daily:events', async () => emitTonightEvents());
 }
 

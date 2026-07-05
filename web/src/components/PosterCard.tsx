@@ -8,7 +8,9 @@ export interface PosterCardProps {
   year?: number | null;
   posterPath?: string | null;
   sub?: string | null; // one-line context under the name
-  flag?: string | null; // corner badge, e.g. "S2E4 tonight"
+  flag?: string | null; // corner badge, e.g. "S2E4 tonight" (top-left)
+  typeBadge?: string | null; // "Movie" / "TV" chip (top-left; don't combine with flag)
+  statusBadge?: string | null; // library status chip (top-right; only when already added)
   scores?: { rt?: number | null; imdb?: number | null; mc?: number | null; tmdb?: number | null };
   offers?: { provider_name: string }[]; // where it streams on my services
   onAdd?: () => void; // shown for titles not yet in the library
@@ -39,6 +41,8 @@ export default function PosterCard(p: PosterCardProps) {
     >
       {poster ? <img className="poster" src={poster} alt="" loading="lazy" /> : <div className="noposter">{p.name}</div>}
       {p.flag && <span className="flag">{p.flag}</span>}
+      {!p.flag && p.typeBadge && <span className="typechip">{p.typeBadge}</span>}
+      {p.statusBadge && <span className="statuschip">{p.statusBadge}</span>}
       {p.onAdd && !p.linkId && (
         <button
           className="addbtn primary"

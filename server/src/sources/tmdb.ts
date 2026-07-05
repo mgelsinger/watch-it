@@ -155,7 +155,17 @@ const ListEntryZ = z
     first_air_date: z.string().nullish(),
     poster_path: z.string().nullish(),
     vote_average: z.number().nullish(),
+    vote_count: z.number().nullish(),
+    popularity: z.number().nullish(),
     overview: z.string().nullish(),
+  })
+  .passthrough();
+
+const DiscoverPageZ = z
+  .object({
+    results: z.array(ListEntryZ).default([]),
+    page: z.number().default(1),
+    total_pages: z.number().default(1),
   })
   .passthrough();
 
@@ -263,6 +273,24 @@ export async function discoverDiscAndDigital(region: string, from: string, to: s
 export async function movieReleaseDates(id: number): Promise<RegionReleaseDates> {
   const raw = await tmdb(`/movie/${id}/release_dates`);
   return ReleaseDatesZ.parse(raw).results;
+}
+
+export type DiscoverPage = z.infer<typeof DiscoverPageZ>;
+
+/** Generic Discover call; the browse service builds and whitelists the params. */
+export async function discover(mediaType: 'movie' | 'tv', params: Record<string, string>): Promise<DiscoverPage> {
+  const raw = await tmdb(`/discover/${mediaType}`, params);
+  return DiscoverPageZ.parse(raw);
+}
+
+export interface GenreEntry {
+  id: number;
+  name: string;
+}
+
+export async function genreList(mediaType: 'movie' | 'tv'): Promise<GenreEntry[]> {
+  const raw = await tmdb(`/genre/${mediaType}/list`);
+  return z.object({ genres: z.array(GenreZ).default([]) }).passthrough().parse(raw).genres;
 }
 
 export async function providerList(region: string): Promise<z.infer<typeof ProviderZ>[]> {

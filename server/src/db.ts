@@ -51,6 +51,9 @@ const SETTING_DEFAULTS: Record<string, string> = {
   region: 'US',
   schedule_country: 'US',
   theme: 'dark',
+  // TMDB network ids for the Browse "Broadcast TV" filter:
+  // ABC=2, NBC=6, CBS=16, Fox=19, The CW=71. Editable in Settings.
+  broadcast_networks: '2|6|16|19|71',
 };
 
 export function getSetting(key: string, fallback?: string): string {

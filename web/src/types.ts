@@ -140,6 +140,35 @@ export interface TitleDetail extends Card {
   premiere_date: string | null;
 }
 
+export interface BrowseCard {
+  tmdb_id: number;
+  media_type: MediaType;
+  name: string;
+  year: number | null;
+  date: string | null;
+  poster_path: string | null;
+  tmdb_rating: number | null;
+  popularity: number | null;
+  overview: string | null;
+  library_id: number | null;
+  user_status: UserStatus | null;
+}
+
+export interface BrowseGenre {
+  key: string;
+  name: string;
+  movie_ids: number[];
+  tv_ids: number[];
+  names: string[];
+}
+
+export interface BrowseGridPage {
+  items: BrowseCard[];
+  page: number;
+  total_pages: number;
+  stale: boolean;
+}
+
 export interface SearchResult {
   tmdb_id: number;
   media_type: MediaType;

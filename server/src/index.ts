@@ -7,6 +7,7 @@ import { config } from './config.js';
 import { migrate } from './db.js';
 import { titleRoutes } from './routes/titles.js';
 import { systemRoutes } from './routes/system.js';
+import { browseRoutes } from './routes/browse.js';
 import { startCron } from './services/sync.js';
 import { ZodError } from 'zod';
 
@@ -28,6 +29,7 @@ async function main(): Promise<void> {
 
   await app.register(titleRoutes);
   await app.register(systemRoutes);
+  await app.register(browseRoutes);
 
   // Serve the built frontend; SPA fallback for non-API routes.
   const webDist = config.webDist || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../web/dist');

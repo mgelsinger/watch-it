@@ -123,6 +123,20 @@ export default function Settings() {
             {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
         </div>
+        <div className="kv">
+          <span className="k">Broadcast TV networks (Browse filter, TMDB network ids)</span>
+          <input
+            defaultValue={data.settings.broadcast_networks}
+            onBlur={(e) => {
+              if (e.target.value !== data.settings.broadcast_networks) void saveSetting('broadcast_networks', e.target.value);
+            }}
+            aria-label="Broadcast network ids"
+            style={{ width: 180 }}
+          />
+        </div>
+        <p className="faint">
+          Pipe-separated TMDB network ids for the Browse “Broadcast TV” filter. Default 2|6|16|19|71 = ABC, NBC, CBS, Fox, The CW.
+        </p>
       </div>
 
       <div className="panel">
