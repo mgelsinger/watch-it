@@ -173,14 +173,16 @@ function moviePool(): Cand[] {
   }));
 }
 
-/** Rewatch candidates: watched titles whose last watch is > 180 days old. */
+/** Rewatch candidates: watched titles whose last watch is > 180 days old.
+ *  Keyed on watch history, not status — a fully watched show left on
+ *  'wishlist' still counts. Only 'dropped' opts out. */
 function rewatchPool(today: string): Cand[] {
   const cutoff = new Date(Date.now() - 180 * DAY).toISOString();
   const movies = db()
     .prepare(`
       SELECT ${TITLE_COLS}, t.runtime AS movie_runtime, us.watched_at AS last_watched
       FROM titles t
-      JOIN user_state us ON us.title_id = t.id AND us.status = 'watched' AND us.never_suggest = 0
+      JOIN user_state us ON us.title_id = t.id AND us.status != 'dropped' AND us.never_suggest = 0
       WHERE t.media_type = 'movie' AND us.watched_at IS NOT NULL AND us.watched_at < ?
     `)
     .all(cutoff) as (Cand & { movie_runtime: number | null })[];
@@ -199,7 +201,7 @@ function rewatchPool(today: string): Cand[] {
               WHERE s1.title_id = t.id AND s1.season_number > 0
               ORDER BY s1.season_number, e1.episode_number LIMIT 1) AS first_episode_runtime
       FROM titles t
-      JOIN user_state us ON us.title_id = t.id AND us.status = 'watched' AND us.never_suggest = 0
+      JOIN user_state us ON us.title_id = t.id AND us.status != 'dropped' AND us.never_suggest = 0
       JOIN seasons s ON s.title_id = t.id AND s.season_number > 0
       JOIN episodes e ON e.season_id = s.id
       WHERE t.media_type = 'tv'
