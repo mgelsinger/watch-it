@@ -1,6 +1,12 @@
 node_modules/
 dist/
 .env
+.env.local
 data/
+*.db
+*.sqlite
+*.sqlite3
 *.log
+.vite/
 .DS_Store
+Thumbs.db
