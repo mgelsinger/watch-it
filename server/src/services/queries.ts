@@ -3,6 +3,7 @@ import { localToday } from '../config.js';
 import { discoveryCacheKeys } from './sync.js';
 import { getReleaseDates } from './releaseDates.js';
 import type { ListEntry } from '../sources/tmdb.js';
+import { enrichCardsWithOffers, filterAndSortOffers, type WatchOffer } from './providers.js';
 
 const CARD_COLS = `t.id, t.tmdb_id, t.media_type, t.imdb_id, t.name, t.year, t.poster_path,
   t.tmdb_rating, t.imdb_rating, t.rt_score, t.metacritic, t.status_upstream, t.release_cadence`;
@@ -26,18 +27,28 @@ function attachMyOffers(rows: CardRow[]): CardRow[] {
   const ids = rows.map((r) => r.id);
   const q = db()
     .prepare(`
-      SELECT a.title_id, a.provider_name, a.logo_path FROM availability a
+      SELECT a.title_id, a.provider_id, a.provider_name, a.logo_path, a.offer_type FROM availability a
       JOIN my_services m ON m.provider_id = a.provider_id AND m.enabled = 1
       WHERE a.active = 1 AND a.offer_type IN ('flatrate','free','ads')
         AND a.title_id IN (${ids.map(() => '?').join(',')})
     `)
-    .all(...ids) as { title_id: number; provider_name: string; logo_path: string | null }[];
-  const byTitle = new Map<number, { provider_name: string; logo_path: string | null }[]>();
+    .all(...ids) as (WatchOffer & { title_id: number })[];
+  const byTitle = new Map<number, WatchOffer[]>();
   for (const r of q) {
     if (!byTitle.has(r.title_id)) byTitle.set(r.title_id, []);
-    byTitle.get(r.title_id)!.push({ provider_name: r.provider_name, logo_path: r.logo_path });
+    byTitle.get(r.title_id)!.push({
+      provider_id: r.provider_id,
+      provider_name: r.provider_name,
+      logo_path: r.logo_path,
+      offer_type: r.offer_type,
+    });
   }
-  for (const row of rows) row.my_offers = byTitle.get(row.id) ?? [];
+  for (const row of rows) {
+    row.my_offers = filterAndSortOffers(
+      byTitle.get(row.id) ?? [],
+      { myServicesOnly: true, includeRentBuy: false },
+    );
+  }
   return rows;
 }
 
@@ -113,6 +124,19 @@ export function wishlistAvailable(): CardRow[] {
   return attachMyOffers(rows);
 }
 
+export function savedForLater(): CardRow[] {
+  const rows = db()
+    .prepare(`
+      SELECT ${CARD_COLS}, us.status AS user_status
+      FROM titles t
+      JOIN user_state us ON us.title_id = t.id AND us.status = 'saved'
+      ORDER BY us.updated_at DESC
+      LIMIT 25
+    `)
+    .all() as CardRow[];
+  return attachMyOffers(rows);
+}
+
 export function nowStreamingRow(): CardRow[] {
   const cutoff = new Date(Date.now() - 30 * 86400_000).toISOString();
   const rows = db()
@@ -163,13 +187,18 @@ export interface DiscoveryCard {
   new_season?: boolean; // tracked show surfacing via a recent season premiere
   digital_date?: string | null; // disc row: TMDB release type 4
   physical_date?: string | null; // disc row: TMDB release type 5
+  offers?: WatchOffer[];
 }
 
 function libraryIdsFor(mediaType: 'movie' | 'tv', tmdbIds: number[]): Map<number, number> {
   const inLib = new Map<number, number>();
   if (tmdbIds.length === 0) return inLib;
   const rows = db()
-    .prepare(`SELECT id, tmdb_id FROM titles WHERE media_type = ? AND tmdb_id IN (${tmdbIds.map(() => '?').join(',')})`)
+    .prepare(`
+      SELECT t.id, t.tmdb_id FROM titles t
+      JOIN user_state us ON us.title_id = t.id
+      WHERE t.media_type = ? AND t.tmdb_id IN (${tmdbIds.map(() => '?').join(',')})
+    `)
     .all(mediaType, ...tmdbIds) as { id: number; tmdb_id: number }[];
   for (const r of rows) inLib.set(r.tmdb_id, r.id);
   return inLib;
@@ -199,7 +228,7 @@ function mapDiscoverEntries(payload: unknown, mediaType: 'movie' | 'tv'): Discov
  * with current availability is the honest approximation (correct for streaming
  * originals and day-and-date releases, the target use case).
  */
-export function newOnServicesRow(): DiscoveryCard[] {
+export async function newOnServicesRow(): Promise<DiscoveryCard[]> {
   const keys = discoveryCacheKeys();
   const cards = [
     ...mapDiscoverEntries(cacheGet(keys.movies, Infinity)?.payload ?? [], 'movie'),
@@ -239,7 +268,7 @@ export function newOnServicesRow(): DiscoveryCard[] {
   }
 
   const seen = new Set<string>();
-  return cards
+  const items = cards
     .filter((c) => {
       const key = `${c.media_type}:${c.tmdb_id}`;
       if (seen.has(key)) return false;
@@ -248,10 +277,11 @@ export function newOnServicesRow(): DiscoveryCard[] {
     })
     .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
     .slice(0, 25);
+  return enrichCardsWithOffers(items, { myServicesOnly: true, includeRentBuy: false });
 }
 
 /** "New to Blu-ray & Digital": recent type-4/5 releases with per-type date badges. */
-export function newDiscDigitalRow(): DiscoveryCard[] {
+export async function newDiscDigitalRow(): Promise<DiscoveryCard[]> {
   const region = getSetting('region');
   const cards = mapDiscoverEntries(cacheGet(discoveryCacheKeys().disc, Infinity)?.payload ?? [], 'movie').slice(0, 20);
   for (const c of cards) {
@@ -260,7 +290,7 @@ export function newDiscDigitalRow(): DiscoveryCard[] {
       if (rd.type === 5) c.physical_date = rd.date;
     }
   }
-  return cards;
+  return enrichCardsWithOffers(cards, { myServicesOnly: false, includeRentBuy: true });
 }
 
 export function history(filter: { year?: number; type?: 'movie' | 'tv' }): { items: unknown[]; stats: unknown } {
@@ -311,8 +341,12 @@ export function titleDetail(titleId: number): unknown | null {
   const d = db();
   const title = d
     .prepare(`
-      SELECT t.*, us.status AS user_status, us.user_rating, us.notes, us.watched_at AS user_watched_at, us.updated_at AS state_updated_at, us.never_suggest
-      FROM titles t LEFT JOIN user_state us ON us.title_id = t.id
+      SELECT t.*, us.status AS user_status, us.user_rating, us.notes, us.watched_at AS user_watched_at,
+             us.updated_at AS state_updated_at,
+             CASE WHEN ss.tmdb_id IS NOT NULL THEN 1 ELSE COALESCE(us.never_suggest, 0) END AS never_suggest
+      FROM titles t
+      LEFT JOIN user_state us ON us.title_id = t.id
+      LEFT JOIN suggestion_suppressions ss ON ss.media_type = t.media_type AND ss.tmdb_id = t.tmdb_id
       WHERE t.id = ?
     `)
     .get(titleId) as Record<string, unknown> | undefined;

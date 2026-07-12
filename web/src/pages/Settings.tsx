@@ -142,7 +142,7 @@ export default function Settings() {
       <div className="panel">
         <h3>My streaming services ({enabledCount} enabled)</h3>
         <p className="faint" style={{ marginTop: 0 }}>
-          Toggle the services you subscribe to — they drive highlighting, the “Wishlist — Available Now” row, and
+          Toggle the services you subscribe to - they drive highlighting, the “Watchlist - Available Now” row, and
           arrived/left alerts. Provider data by JustWatch.
         </p>
         <input

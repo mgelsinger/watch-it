@@ -25,7 +25,7 @@ export default function Home() {
 
   const totalTracked =
     data.continue_watching.length + data.wishlist_available.length + data.returning_soon.length +
-    data.recently_watched.length + data.new_tonight.length;
+    data.saved_for_later.length + data.recently_watched.length + data.new_tonight.length;
 
   const addToWishlist = async (c: DiscoveryCard) => {
     await api('/api/titles', { json: { tmdb_id: c.tmdb_id, media_type: c.media_type, status: 'wishlist' } });
@@ -35,16 +35,16 @@ export default function Home() {
   return (
     <>
       <Link to="/pick" className="pick-cta">
-        🎲 Pick For Me Tonight
-        <span className="pick-cta-sub">Tell it how much time you have — it picks, you watch.</span>
+        Pick For Me Tonight
+        <span className="pick-cta-sub">Fresh releases and current shows on your services, picked for tonight.</span>
       </Link>
 
       {totalTracked === 0 && (
         <div className="empty">
           <h3>Welcome to watch-it</h3>
           <p>
-            Nothing tracked yet. Start by checking your API keys in <Link to="/settings"><u>Settings</u></Link>, pick
-            your streaming services there, then use the search box above to add your first show or movie.
+            Nothing tracked yet. Check your API keys in <Link to="/settings"><u>Settings</u></Link>, choose your
+            streaming services, then get a recommendation here or search for a title to save.
           </p>
         </div>
       )}
@@ -88,7 +88,7 @@ export default function Home() {
         />
       ))} />
 
-      <Row title="Wishlist — Available Now" children={data.wishlist_available.map((c) => (
+      <Row title="Watchlist - Available Now" children={data.wishlist_available.map((c) => (
         <PosterCard
           key={c.id}
           linkId={c.id}
@@ -96,6 +96,18 @@ export default function Home() {
           year={c.year}
           posterPath={c.poster_path}
           sub={c.my_offers?.length ? `On ${c.my_offers.map((o) => o.provider_name).join(', ')}` : undefined}
+          scores={cardScores(c)}
+          offers={c.my_offers}
+        />
+      ))} />
+
+      <Row title="Saved for Later" children={data.saved_for_later.map((c) => (
+        <PosterCard
+          key={c.id}
+          linkId={c.id}
+          name={c.name}
+          year={c.year}
+          posterPath={c.poster_path}
           scores={cardScores(c)}
           offers={c.my_offers}
         />
@@ -115,6 +127,7 @@ export default function Home() {
           sub={c.date ? fmtDate(c.date) : undefined}
           flag={c.new_season ? 'New season' : undefined}
           scores={{ tmdb: c.tmdb_rating }}
+          offers={c.offers}
           onAdd={c.library_id ? undefined : () => void addToWishlist(c)}
         />
       ))} />
@@ -127,6 +140,7 @@ export default function Home() {
           posterPath={c.poster_path}
           sub={discSub(c)}
           scores={{ tmdb: c.tmdb_rating }}
+          offers={c.offers}
           onAdd={c.library_id ? undefined : () => void addToWishlist(c)}
         />
       ))} />

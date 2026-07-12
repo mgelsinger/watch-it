@@ -1,5 +1,12 @@
 export type MediaType = 'movie' | 'tv';
-export type UserStatus = 'wishlist' | 'watching' | 'watched' | 'dropped' | 'paused';
+export type UserStatus = 'saved' | 'wishlist' | 'watching' | 'watched' | 'dropped' | 'paused';
+
+export interface WatchOffer {
+  provider_id: number;
+  provider_name: string;
+  logo_path: string | null;
+  offer_type: 'flatrate' | 'rent' | 'buy' | 'free' | 'ads';
+}
 
 export interface Cadence {
   type: 'weekly' | 'binge' | 'split' | 'irregular';
@@ -21,7 +28,7 @@ export interface Card {
   status_upstream: string | null;
   release_cadence: string | null;
   user_status?: UserStatus;
-  my_offers?: { provider_name: string; logo_path: string | null }[];
+  my_offers?: WatchOffer[];
   // row-specific extras
   next_episode_id?: number;
   next_episode_name?: string | null;
@@ -45,6 +52,7 @@ export interface DiscoveryCard {
   new_season?: boolean;
   digital_date?: string | null;
   physical_date?: string | null;
+  offers?: WatchOffer[];
 }
 
 export interface Episode {
@@ -154,6 +162,7 @@ export interface BrowseCard {
   overview: string | null;
   library_id: number | null;
   user_status: UserStatus | null;
+  offers?: WatchOffer[];
 }
 
 export interface BrowseGenre {
@@ -187,6 +196,7 @@ export interface HomeData {
   new_tonight: Card[];
   returning_soon: Card[];
   wishlist_available: Card[];
+  saved_for_later: Card[];
   now_streaming: Card[];
   new_on_services: DiscoveryCard[];
   new_disc_digital: DiscoveryCard[];
@@ -220,29 +230,25 @@ export interface Provider {
 export interface PickConstraints {
   /** Minutes; null or >= 120 ("2h+" / "No limit") disables the budget filter. */
   time: number | null;
-  type: 'episode' | 'movie' | 'either';
+  type: 'tv' | 'movie' | 'either';
   genres: string[]; // merged genre keys (mood chips)
   my_services_only: boolean;
   include_rent_buy: boolean;
-  unwatched_only: boolean;
-  bingeable_only: boolean;
+  exclude_library_titles: boolean;
 }
 
 export interface PickCandidate {
-  title_id: number;
+  key: string;
+  tmdb_id: number;
+  library_id: number | null;
   media_type: MediaType;
   name: string;
   year: number | null;
   poster_path: string | null;
-  kind: 'continue' | 'start' | 'rewatch';
-  episode_id: number | null;
-  season_number: number | null;
-  episode_number: number | null;
-  episode_name: string | null;
+  source: 'new_release' | 'airing_now' | 'popular';
   runtime: number;
   runtime_estimated: boolean;
-  fits_episodes: number | null;
-  providers: { name: string; offer_type: string }[];
+  providers: WatchOffer[];
   rent_buy_only: boolean;
   reasons: string[];
 }
@@ -257,6 +263,12 @@ export interface PickResult {
   pool_size: number;
   exhausted?: boolean;
   empty?: { message: string; loosen: PickLoosen[] };
+}
+
+export interface PickSessionState {
+  constraints: PickConstraints;
+  result: PickResult | null;
+  shown: string[];
 }
 
 export interface SyncState {

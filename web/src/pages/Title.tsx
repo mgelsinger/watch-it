@@ -1,11 +1,27 @@
 import { useEffect, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, countdown, fmtDate, img, useApi } from '../api';
-import type { Availability, CastMember, Cadence, Episode, Season, TitleDetail, UserStatus } from '../types';
+import type { Availability, BrowseCard, CastMember, Cadence, Episode, PickSessionState, Season, TitleDetail, UserStatus } from '../types';
 import Scores from '../components/Scores';
+import PosterCard from '../components/PosterCard';
+import Carousel from '../components/Carousel';
+
+interface TitleNavigationState {
+  pickSession?: PickSessionState;
+  returnTo?: { path: string; label: string; state?: unknown };
+}
 
 const OFFER_LABEL: Record<string, string> = {
   flatrate: 'Stream', free: 'Free', ads: 'Free with ads', rent: 'Rent', buy: 'Buy',
+};
+
+const STATUS_LABEL: Record<UserStatus, string> = {
+  saved: 'Saved for Later',
+  wishlist: 'Watchlist',
+  watching: 'Watching',
+  watched: 'Watched',
+  paused: 'Paused',
+  dropped: 'Dropped',
 };
 
 function parseCadence(raw: string | null): Cadence | null {
@@ -17,14 +33,19 @@ function parseCadence(raw: string | null): Cadence | null {
   }
 }
 
-function EpisodeRow({ ep, anchored, onToggle }: { ep: Episode; anchored?: boolean; onToggle: (ep: Episode, watched: boolean) => void }) {
+function EpisodeRow({ ep, anchored, readOnly, onToggle }: {
+  ep: Episode;
+  anchored?: boolean;
+  readOnly?: boolean;
+  onToggle: (ep: Episode, watched: boolean) => void;
+}) {
   const future = !!ep.air_date && ep.air_date > new Date().toLocaleDateString('en-CA');
   return (
     <div id={`ep-${ep.id}`} className={`ep ${future ? 'future' : ''} ${anchored ? 'anchored' : ''}`}>
       <input
         type="checkbox"
         checked={!!ep.watched_at}
-        disabled={future && !ep.watched_at}
+        disabled={readOnly || (future && !ep.watched_at)}
         onChange={(e) => onToggle(ep, e.target.checked)}
         aria-label={`Mark episode ${ep.episode_number} watched`}
       />
@@ -36,10 +57,11 @@ function EpisodeRow({ ep, anchored, onToggle }: { ep: Episode; anchored?: boolea
   );
 }
 
-function SeasonBlock({ season, defaultOpen, anchorEp, onToggleEp, onToggleSeason }: {
+function SeasonBlock({ season, defaultOpen, anchorEp, readOnly, onToggleEp, onToggleSeason }: {
   season: Season;
   defaultOpen: boolean;
   anchorEp?: number | null;
+  readOnly: boolean;
   onToggleEp: (ep: Episode, watched: boolean) => void;
   onToggleSeason: (season: Season, watched: boolean) => void;
 }) {
@@ -52,17 +74,25 @@ function SeasonBlock({ season, defaultOpen, anchorEp, onToggleEp, onToggleSeason
         <span className="faint">{season.air_date ? `premiered ${fmtDate(season.air_date)}` : 'no air date yet'}</span>
         <span className="faint">· {watched}/{season.episodes.length} watched</span>
         <span style={{ flex: 1 }} />
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            onToggleSeason(season, watched < aired);
-          }}
-        >
-          {watched < aired ? 'Mark all watched' : 'Mark all unwatched'}
-        </button>
+        {!readOnly && (
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              onToggleSeason(season, watched < aired);
+            }}
+          >
+            {watched < aired ? 'Mark all watched' : 'Mark all unwatched'}
+          </button>
+        )}
       </summary>
       {season.episodes.map((ep) => (
-        <EpisodeRow key={ep.id} ep={ep} anchored={ep.id === anchorEp} onToggle={onToggleEp} />
+        <EpisodeRow
+          key={ep.id}
+          ep={ep}
+          anchored={ep.id === anchorEp}
+          readOnly={readOnly}
+          onToggle={onToggleEp}
+        />
       ))}
     </details>
   );
@@ -70,11 +100,26 @@ function SeasonBlock({ season, defaultOpen, anchorEp, onToggleEp, onToggleSeason
 
 export default function Title() {
   const { id } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const navigationState = location.state as TitleNavigationState | null;
+  const pickSession = navigationState?.pickSession;
+  const returnTo = navigationState?.returnTo;
   const [searchParams] = useSearchParams();
   const anchorEp = Number(searchParams.get('ep')) || null; // Pick For Me lands on the suggested episode
   const { data, loading, error, setData, reload } = useApi<TitleDetail>(`/api/titles/${id}`);
   const [refreshing, setRefreshing] = useState(false);
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
+  const [similarOpen, setSimilarOpen] = useState(false);
+  const [similarItems, setSimilarItems] = useState<BrowseCard[] | null>(null);
+  const [similarLoading, setSimilarLoading] = useState(false);
+  const [similarError, setSimilarError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSimilarOpen(false);
+    setSimilarItems(null);
+    setSimilarError(null);
+  }, [id]);
 
   useEffect(() => {
     if (!data || !anchorEp) return;
@@ -139,6 +184,56 @@ export default function Title() {
     setData(await api<TitleDetail>(`/api/titles/${t.id}/state`, { method: 'PATCH', json: body }));
   };
 
+  const trackTitle = async (status: 'saved' | 'wishlist' | 'watching' | 'watched') => {
+    await patchState(
+      status === 'watched' && t.media_type === 'movie'
+        ? { status, watched: true }
+        : { status },
+    );
+  };
+
+  const removeFromList = async () => {
+    setData(await api<TitleDetail>(`/api/titles/${t.id}/state`, { method: 'DELETE' }));
+  };
+
+  const toggleSimilar = async () => {
+    if (similarOpen) {
+      setSimilarOpen(false);
+      return;
+    }
+    setSimilarOpen(true);
+    if (similarItems) return;
+    setSimilarLoading(true);
+    setSimilarError(null);
+    try {
+      const response = await api<{ items: BrowseCard[] }>(`/api/titles/${t.id}/similar`);
+      setSimilarItems(response.items);
+    } catch (err) {
+      setSimilarError((err as Error).message);
+    } finally {
+      setSimilarLoading(false);
+    }
+  };
+
+  const openSimilar = async (item: BrowseCard) => {
+    let titleId = item.library_id;
+    if (!titleId) {
+      const preview = await api<TitleDetail>('/api/titles/preview', {
+        json: { tmdb_id: item.tmdb_id, media_type: item.media_type },
+      });
+      titleId = preview.id;
+    }
+    navigate(`/title/${titleId}`, {
+      state: {
+        returnTo: {
+          path: `${location.pathname}${location.search}`,
+          label: `Back to ${t.name}`,
+          state: location.state,
+        },
+      } satisfies TitleNavigationState,
+    });
+  };
+
   const toggleEpisode = async (ep: Episode, watched: boolean) => {
     // optimistic update
     setData({
@@ -174,6 +269,22 @@ export default function Title() {
 
   return (
     <>
+      {pickSession && (
+        <button
+          className="detail-back"
+          onClick={() => navigate('/pick', { state: { pickSession } })}
+        >
+          Back to Pick For Me Tonight
+        </button>
+      )}
+      {!pickSession && returnTo && (
+        <button
+          className="detail-back"
+          onClick={() => navigate(returnTo.path, { state: returnTo.state })}
+        >
+          {returnTo.label}
+        </button>
+      )}
       <div className="backdrop">
         {t.backdrop_path && <img className="bg" src={img(t.backdrop_path, 'w1280') ?? ''} alt="" />}
         <div className="overlay" style={t.backdrop_path ? undefined : { position: 'static' }}>
@@ -190,35 +301,54 @@ export default function Title() {
               {cadence && <> · <strong style={{ color: 'var(--accent)' }}>{cadence.detail}</strong></>}
             </div>
             <div className="toolbar" style={{ marginBottom: 0 }}>
-              <select
-                value={t.user_status ?? 'wishlist'}
-                onChange={(e) => void patchState({ status: e.target.value as UserStatus })}
-                aria-label="Watch status"
-              >
-                {['wishlist', 'watching', 'watched', 'paused', 'dropped'].map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-              {t.media_type === 'movie' && (
-                <label className="pill" style={{ cursor: 'pointer' }}>
-                  <input type="checkbox" checked={!!t.user_watched_at} onChange={(e) => void patchState({ watched: e.target.checked })} /> watched
-                </label>
+              {t.user_status ? (
+                <>
+                  <select
+                    value={t.user_status}
+                    onChange={(e) => void patchState({ status: e.target.value as UserStatus })}
+                    aria-label="Watch status"
+                  >
+                    {['saved', 'wishlist', 'watching', 'watched', 'paused', 'dropped'].map((s) => (
+                      <option key={s} value={s}>{STATUS_LABEL[s as UserStatus]}</option>
+                    ))}
+                  </select>
+                  {t.media_type === 'movie' && (
+                    <label className="pill" style={{ cursor: 'pointer' }}>
+                      <input type="checkbox" checked={!!t.user_watched_at} onChange={(e) => void patchState({ watched: e.target.checked })} /> watched
+                    </label>
+                  )}
+                  <label className="pill" style={{ cursor: 'pointer' }} title="Exclude from Pick For Me suggestions">
+                    <input type="checkbox" checked={!!t.never_suggest} onChange={(e) => void patchState({ never_suggest: e.target.checked })} /> never suggest
+                  </label>
+                  <select
+                    value={t.user_rating ?? ''}
+                    onChange={(e) => void patchState({ user_rating: e.target.value ? Number(e.target.value) : null })}
+                    aria-label="My rating"
+                  >
+                    <option value="">my rating</option>
+                    {Array.from({ length: 10 }, (_, i) => 10 - i).map((n) => (
+                      <option key={n} value={n}>{n}/10</option>
+                    ))}
+                  </select>
+                  <button onClick={() => void refresh()} disabled={refreshing}>Refresh</button>
+                  {t.user_status === 'wishlist' && (
+                    <button onClick={() => void removeFromList()}>Remove from Watchlist</button>
+                  )}
+                  {t.user_status === 'saved' && (
+                    <button onClick={() => void removeFromList()}>Remove from Saved for Later</button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <span className="faint">Not in your Library</span>
+                  <button onClick={() => void trackTitle('saved')}>Save for Later</button>
+                  <button className="primary" onClick={() => void trackTitle('wishlist')}>Add to Watchlist</button>
+                  <button onClick={() => void trackTitle('watching')}>Start Watching</button>
+                  <button onClick={() => void trackTitle('watched')}>Already Watched</button>
+                </>
               )}
-              <label className="pill" style={{ cursor: 'pointer' }} title="Exclude from Pick For Me suggestions">
-                <input type="checkbox" checked={!!t.never_suggest} onChange={(e) => void patchState({ never_suggest: e.target.checked })} /> never suggest
-              </label>
-              <select
-                value={t.user_rating ?? ''}
-                onChange={(e) => void patchState({ user_rating: e.target.value ? Number(e.target.value) : null })}
-                aria-label="My rating"
-              >
-                <option value="">my rating</option>
-                {Array.from({ length: 10 }, (_, i) => 10 - i).map((n) => (
-                  <option key={n} value={n}>{n}/10</option>
-                ))}
-              </select>
-              <button onClick={() => void refresh()} disabled={refreshing}>
-                <span className={refreshing ? 'spin' : ''}>⟳</span> Refresh
+              <button onClick={() => void toggleSimilar()}>
+                {similarOpen ? 'Hide Similar Titles' : 'More Like This'}
               </button>
               {t.imdb_id && (
                 <a className="pill" href={`https://www.imdb.com/title/${t.imdb_id}/`} target="_blank" rel="noreferrer">
@@ -247,12 +377,38 @@ export default function Title() {
             </div>
           )}
 
+          {similarOpen && (
+            <div className="panel">
+              <h3>More Like This</h3>
+              {similarLoading && <p className="muted">Finding similar titles...</p>}
+              {similarError && <p className="muted">{similarError}</p>}
+              {similarItems?.length === 0 && <p className="muted">No similar titles were found.</p>}
+              {similarItems && similarItems.length > 0 && (
+                <Carousel label="Similar titles">
+                  {similarItems.map((item) => (
+                    <PosterCard
+                      key={`${item.media_type}:${item.tmdb_id}`}
+                      name={item.name}
+                      year={item.year}
+                      posterPath={item.poster_path}
+                      sub={item.year != null ? String(item.year) : undefined}
+                      typeBadge={item.media_type === 'movie' ? 'Movie' : 'TV'}
+                      scores={{ tmdb: item.tmdb_rating }}
+                      offers={item.offers}
+                      onOpen={() => void openSimilar(item)}
+                    />
+                  ))}
+                </Carousel>
+              )}
+            </div>
+          )}
+
           {t.media_type === 'tv' && (
             <div className="panel">
               <h3>Seasons</h3>
-              {(t.next_unwatched || t.next_airing) && (
+              {((t.user_status && t.next_unwatched) || t.next_airing) && (
                 <p style={{ marginTop: 0 }}>
-                  {t.next_unwatched && (
+                  {t.user_status && t.next_unwatched && (
                     <>
                       <strong>Next up for you:</strong> S{t.next_unwatched.season_number}E{t.next_unwatched.episode_number}
                       {t.next_unwatched.name ? ` · ${t.next_unwatched.name}` : ''}
@@ -279,6 +435,7 @@ export default function Title() {
                         : t.next_unwatched ? s.episodes.some((e) => e.id === t.next_unwatched!.id) : false
                     }
                     anchorEp={anchorEp}
+                    readOnly={!t.user_status}
                     onToggleEp={(ep, w) => void toggleEpisode(ep, w)}
                     onToggleSeason={(se, w) => void toggleSeason(se, w)}
                   />
@@ -370,19 +527,21 @@ export default function Title() {
             </div>
           </div>
 
-          <div className="panel">
-            <h3>Notes</h3>
-            <textarea
-              rows={4}
-              style={{ width: '100%' }}
-              placeholder="Private notes…"
-              value={notesDraft ?? t.notes ?? ''}
-              onChange={(e) => setNotesDraft(e.target.value)}
-              onBlur={() => {
-                if (notesDraft !== null && notesDraft !== (t.notes ?? '')) void patchState({ notes: notesDraft });
-              }}
-            />
-          </div>
+          {t.user_status && (
+            <div className="panel">
+              <h3>Notes</h3>
+              <textarea
+                rows={4}
+                style={{ width: '100%' }}
+                placeholder="Private notes…"
+                value={notesDraft ?? t.notes ?? ''}
+                onChange={(e) => setNotesDraft(e.target.value)}
+                onBlur={() => {
+                  if (notesDraft !== null && notesDraft !== (t.notes ?? '')) void patchState({ notes: notesDraft });
+                }}
+              />
+            </div>
+          )}
         </div>
       </div>
     </>

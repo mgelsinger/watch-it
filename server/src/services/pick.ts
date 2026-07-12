@@ -1,39 +1,39 @@
-import { getDb } from '../db.js';
+import { cacheGet, cacheSet, getDb, getSetting } from '../db.js';
 import { localToday, nowIso } from '../config.js';
+import * as tmdb from '../sources/tmdb.js';
+import { enabledServiceIds } from './availability.js';
 import { getGenres, type MergedGenre } from './browse.js';
+import { offersForTitle, type WatchOffer } from './providers.js';
 
 const DAY = 86400_000;
+const STREAM_TYPES = new Set<WatchOffer['offer_type']>(['flatrate', 'free', 'ads']);
+const TEMPERATURE = 0.2;
+const REPEAT_COOLDOWN_DAYS = 7;
+const HISTORY_PENALTY_DAYS = 30;
 
 export interface PickConstraints {
-  time: number | null; // minutes; null or >= 120 ("2h+" / "No limit") disables the budget filter
-  type: 'episode' | 'movie' | 'either';
-  genres: string[]; // merged genre keys (mood chips)
+  time: number | null;
+  type: 'tv' | 'movie' | 'either';
+  genres: string[];
   my_services_only: boolean;
-  include_rent_buy: boolean; // one-click loosening of the services filter
-  unwatched_only: boolean;
-  bingeable_only: boolean;
+  include_rent_buy: boolean;
+  exclude_library_titles: boolean;
 }
 
-export interface PickOffer {
-  name: string;
-  offer_type: string;
-}
+export type PickSource = 'new_release' | 'airing_now' | 'popular';
 
 export interface PickCandidate {
-  title_id: number;
+  key: string;
+  tmdb_id: number;
+  library_id: number | null;
   media_type: 'movie' | 'tv';
   name: string;
   year: number | null;
   poster_path: string | null;
-  kind: 'continue' | 'start' | 'rewatch';
-  episode_id: number | null;
-  season_number: number | null;
-  episode_number: number | null;
-  episode_name: string | null;
-  runtime: number; // effective minutes measured against the budget
+  source: PickSource;
+  runtime: number;
   runtime_estimated: boolean;
-  fits_episodes: number | null; // >1 when several episodes fit the budget
-  providers: PickOffer[]; // offers on enabled services (streaming first)
+  providers: WatchOffer[];
   rent_buy_only: boolean;
   reasons: string[];
 }
@@ -45,511 +45,419 @@ export interface Loosen {
 
 export interface PickResult {
   candidate: PickCandidate | null;
-  pool_size: number; // candidates surviving the filters (before session exclusions)
-  exhausted?: boolean; // pool nonempty but every candidate was already shown this session
+  pool_size: number;
+  exhausted?: boolean;
   empty?: { message: string; loosen: Loosen[] };
 }
 
-interface Cand {
-  title_id: number;
+interface DiscoveryCandidate {
+  key: string;
+  tmdb_id: number;
+  library_id: number | null;
   media_type: 'movie' | 'tv';
   name: string;
   year: number | null;
   poster_path: string | null;
-  genres_raw: string;
-  rt_score: number | null;
-  imdb_rating: number | null;
-  tmdb_rating: number | null;
-  status: string;
-  added_at: string;
-  kind: 'continue' | 'start' | 'rewatch';
-  episode_id: number | null;
-  episode_name: string | null;
-  season_number: number | null;
-  episode_number: number | null;
-  runtime: number;
-  runtime_estimated: boolean;
-  watched_count: number;
-  season_remaining: number;
-  last_watched: string | null;
-  // filled in during scoring
-  genres: string[];
-  mood_matched: number;
+  rating: number | null;
+  popularity: number;
+  source: PickSource;
   score: number;
+}
+
+interface DiscoveryQuery {
+  mediaType: 'movie' | 'tv';
+  source: PickSource;
+  params: Record<string, string>;
+}
+
+export function shouldExcludeLibraryTitle(
+  local: { status: string | null } | undefined,
+  excludeLibraryTitles: boolean,
+): boolean {
+  if (!local) return false;
+  if (local.status === 'watched' || local.status === 'dropped') return true;
+  return excludeLibraryTitles;
 }
 
 function db() {
   return getDb();
 }
 
-const TITLE_COLS = `t.id AS title_id, t.media_type, t.name, t.year, t.poster_path, t.genres AS genres_raw,
-  t.rt_score, t.imdb_rating, t.tmdb_rating, t.added_at, us.status`;
+function stableParams(params: Record<string, string>): string {
+  return Object.keys(params).sort().map((k) => `${k}=${params[k]}`).join('&');
+}
 
-function parseGenres(raw: string): string[] {
+async function cachedDiscover(query: DiscoveryQuery): Promise<tmdb.DiscoverPage> {
+  const key = `pick_discover:${query.mediaType}:${query.source}:${stableParams(query.params)}`;
+  const cached = cacheGet(key, DAY);
+  if (cached?.fresh) return cached.payload as tmdb.DiscoverPage;
   try {
-    const g = JSON.parse(raw);
-    return Array.isArray(g) ? g : [];
-  } catch {
-    return [];
+    const fresh = await tmdb.discover(query.mediaType, query.params);
+    cacheSet(key, fresh);
+    return fresh;
+  } catch (err) {
+    if (cached) return cached.payload as tmdb.DiscoverPage;
+    throw err;
   }
 }
 
-/** Episode-runtime fallback chain: episode → show average → show runtime → 30/45 by genre. */
-function episodeRuntime(epRuntime: number | null, avg: number | null, show: number | null, genres: string[]): { minutes: number; estimated: boolean } {
-  if (epRuntime) return { minutes: epRuntime, estimated: false };
-  if (avg) return { minutes: Math.round(avg), estimated: true };
-  if (show) return { minutes: show, estimated: true };
-  const halfHour = genres.some((g) => g === 'Comedy' || g === 'Animation');
-  return { minutes: halfHour ? 30 : 45, estimated: true };
+function mediaTypes(type: PickConstraints['type']): ('movie' | 'tv')[] {
+  return type === 'either' ? ['movie', 'tv'] : [type];
 }
 
-// ---- pool construction (local SQL only) ----
-
-/** Continue watching + start something: TV shows with a next unwatched aired episode. */
-function tvPool(today: string): Cand[] {
-  const rows = db()
-    .prepare(`
-      SELECT * FROM (
-        SELECT ${TITLE_COLS}, t.runtime AS show_runtime,
-               e.id AS episode_id, e.name AS episode_name, e.runtime AS episode_runtime,
-               s.season_number, e.episode_number,
-               ROW_NUMBER() OVER (PARTITION BY t.id ORDER BY s.season_number, e.episode_number) AS rn,
-               (SELECT COUNT(*) FROM episodes ew JOIN seasons sw ON ew.season_id = sw.id
-                WHERE sw.title_id = t.id AND ew.watched_at IS NOT NULL) AS watched_count,
-               (SELECT AVG(er.runtime) FROM episodes er JOIN seasons sr ON er.season_id = sr.id
-                WHERE sr.title_id = t.id AND er.runtime IS NOT NULL) AS avg_ep_runtime,
-               (SELECT COUNT(*) FROM episodes e2 WHERE e2.season_id = s.id
-                AND e2.watched_at IS NULL AND e2.air_date IS NOT NULL AND e2.air_date <= :today) AS season_remaining
-        FROM titles t
-        JOIN user_state us ON us.title_id = t.id AND us.status IN ('watching','wishlist') AND us.never_suggest = 0
-        JOIN seasons s ON s.title_id = t.id AND s.season_number > 0
-        JOIN episodes e ON e.season_id = s.id AND e.watched_at IS NULL AND e.air_date IS NOT NULL AND e.air_date <= :today
-        WHERE t.media_type = 'tv'
-      ) WHERE rn = 1
-    `)
-    .all({ today }) as (Cand & { show_runtime: number | null; episode_runtime: number | null; avg_ep_runtime: number | null })[];
-  return rows.map((r) => {
-    const genres = parseGenres(r.genres_raw);
-    const rt = episodeRuntime(r.episode_runtime, r.avg_ep_runtime, r.show_runtime, genres);
-    return {
-      ...r,
-      kind: r.status === 'watching' ? 'continue' as const : 'start' as const,
-      runtime: rt.minutes,
-      runtime_estimated: rt.estimated,
-      last_watched: null,
-      genres,
-      mood_matched: 0,
-      score: 0,
-    };
-  });
-}
-
-/** Start something: wishlist / added-but-unstarted movies. */
-function moviePool(): Cand[] {
-  const rows = db()
-    .prepare(`
-      SELECT ${TITLE_COLS}, t.runtime AS movie_runtime
-      FROM titles t
-      JOIN user_state us ON us.title_id = t.id AND us.status IN ('wishlist','watching')
-        AND us.watched_at IS NULL AND us.never_suggest = 0
-      WHERE t.media_type = 'movie'
-    `)
-    .all() as (Cand & { movie_runtime: number | null })[];
-  return rows.map((r) => ({
-    ...r,
-    kind: 'start' as const,
-    episode_id: null,
-    episode_name: null,
-    season_number: null,
-    episode_number: null,
-    runtime: r.movie_runtime ?? 120,
-    runtime_estimated: r.movie_runtime == null,
-    watched_count: 0,
-    season_remaining: 0,
-    last_watched: null,
-    genres: parseGenres(r.genres_raw),
-    mood_matched: 0,
-    score: 0,
-  }));
-}
-
-/** Rewatch candidates: watched titles whose last watch is > 180 days old.
- *  Keyed on watch history, not status — a fully watched show left on
- *  'wishlist' still counts. Only 'dropped' opts out. */
-function rewatchPool(today: string): Cand[] {
-  const cutoff = new Date(Date.now() - 180 * DAY).toISOString();
-  const movies = db()
-    .prepare(`
-      SELECT ${TITLE_COLS}, t.runtime AS movie_runtime, us.watched_at AS last_watched
-      FROM titles t
-      JOIN user_state us ON us.title_id = t.id AND us.status != 'dropped' AND us.never_suggest = 0
-      WHERE t.media_type = 'movie' AND us.watched_at IS NOT NULL AND us.watched_at < ?
-    `)
-    .all(cutoff) as (Cand & { movie_runtime: number | null })[];
-  const shows = db()
-    .prepare(`
-      SELECT ${TITLE_COLS}, t.runtime AS show_runtime, MAX(e.watched_at) AS last_watched,
-             (SELECT AVG(er.runtime) FROM episodes er JOIN seasons sr ON er.season_id = sr.id
-              WHERE sr.title_id = t.id AND er.runtime IS NOT NULL) AS avg_ep_runtime,
-             (SELECT e1.id FROM episodes e1 JOIN seasons s1 ON e1.season_id = s1.id
-              WHERE s1.title_id = t.id AND s1.season_number > 0
-              ORDER BY s1.season_number, e1.episode_number LIMIT 1) AS first_episode_id,
-             (SELECT e1.name FROM episodes e1 JOIN seasons s1 ON e1.season_id = s1.id
-              WHERE s1.title_id = t.id AND s1.season_number > 0
-              ORDER BY s1.season_number, e1.episode_number LIMIT 1) AS first_episode_name,
-             (SELECT e1.runtime FROM episodes e1 JOIN seasons s1 ON e1.season_id = s1.id
-              WHERE s1.title_id = t.id AND s1.season_number > 0
-              ORDER BY s1.season_number, e1.episode_number LIMIT 1) AS first_episode_runtime
-      FROM titles t
-      JOIN user_state us ON us.title_id = t.id AND us.status != 'dropped' AND us.never_suggest = 0
-      JOIN seasons s ON s.title_id = t.id AND s.season_number > 0
-      JOIN episodes e ON e.season_id = s.id
-      WHERE t.media_type = 'tv'
-      GROUP BY t.id
-      HAVING SUM(CASE WHEN e.watched_at IS NULL AND e.air_date IS NOT NULL AND e.air_date <= :today THEN 1 ELSE 0 END) = 0
-        AND MAX(e.watched_at) IS NOT NULL AND MAX(e.watched_at) < :cutoff
-    `)
-    .all({ today, cutoff }) as (Cand & {
-      show_runtime: number | null; avg_ep_runtime: number | null;
-      first_episode_id: number | null; first_episode_name: string | null; first_episode_runtime: number | null;
-    })[];
-
-  return [
-    ...movies.map((r) => ({
-      ...r,
-      kind: 'rewatch' as const,
-      episode_id: null,
-      episode_name: null,
-      season_number: null,
-      episode_number: null,
-      runtime: r.movie_runtime ?? 120,
-      runtime_estimated: r.movie_runtime == null,
-      watched_count: 0,
-      season_remaining: 0,
-      genres: parseGenres(r.genres_raw),
-      mood_matched: 0,
-      score: 0,
-    })),
-    ...shows.map((r) => {
-      const genres = parseGenres(r.genres_raw);
-      const rt = episodeRuntime(r.first_episode_runtime, r.avg_ep_runtime, r.show_runtime, genres);
-      return {
-        ...r,
-        kind: 'rewatch' as const,
-        episode_id: r.first_episode_id,
-        episode_name: r.first_episode_name,
-        season_number: 1,
-        episode_number: 1,
-        runtime: rt.minutes,
-        runtime_estimated: rt.estimated,
-        watched_count: 0,
-        season_remaining: 0,
-        genres,
-        mood_matched: 0,
-        score: 0,
-      };
-    }),
-  ];
-}
-
-// ---- local signals for filters and scoring ----
-
-/** Active offers on enabled services, per title. */
-function myOffers(): Map<number, PickOffer[]> {
-  const rows = db()
-    .prepare(`
-      SELECT a.title_id, a.provider_name AS name, a.offer_type
-      FROM availability a
-      JOIN my_services m ON m.provider_id = a.provider_id AND m.enabled = 1
-      WHERE a.active = 1
-      ORDER BY CASE WHEN a.offer_type IN ('flatrate','free','ads') THEN 0 ELSE 1 END, a.provider_name
-    `)
-    .all() as (PickOffer & { title_id: number })[];
-  const map = new Map<number, PickOffer[]>();
-  for (const r of rows) {
-    if (!map.has(r.title_id)) map.set(r.title_id, []);
-    const list = map.get(r.title_id)!;
-    if (!list.some((o) => o.name === r.name && o.offer_type === r.offer_type)) list.push({ name: r.name, offer_type: r.offer_type });
+function serviceParams(c: PickConstraints): Record<string, string> | null {
+  const region = getSetting('region');
+  const params: Record<string, string> = {
+    watch_region: region,
+    with_watch_monetization_types: c.include_rent_buy ? 'flatrate|free|ads|rent|buy' : 'flatrate|free|ads',
+  };
+  if (c.my_services_only) {
+    const providers = [...enabledServiceIds()].sort((a, b) => a - b);
+    if (providers.length === 0) return null;
+    params.with_watch_providers = providers.join('|');
   }
-  return map;
+  return params;
 }
 
-const STREAM_TYPES = new Set(['flatrate', 'free', 'ads']);
+async function buildQueries(c: PickConstraints): Promise<DiscoveryQuery[]> {
+  const services = serviceParams(c);
+  if (!services) return [];
+  const genres = c.genres.length > 0 ? await getGenres() : [];
+  const today = localToday();
+  const recent = localToday(-30);
+  const airing = localToday(-7);
+  const budget = c.time != null && c.time < 120 ? c.time : null;
+  const queries: DiscoveryQuery[] = [];
 
-/** Titles that genuinely arrived on an enabled service in the last 30 days (initial_sync = 0). */
-function recentArrivals(): Map<number, string> {
-  const cutoff = new Date(Date.now() - 30 * DAY).toISOString();
-  const rows = db()
-    .prepare(`
-      SELECT a.title_id, a.provider_name FROM availability a
-      JOIN my_services m ON m.provider_id = a.provider_id AND m.enabled = 1
-      WHERE a.active = 1 AND a.initial_sync = 0 AND a.offer_type IN ('flatrate','free','ads') AND a.first_seen >= ?
-    `)
-    .all(cutoff) as { title_id: number; provider_name: string }[];
-  return new Map(rows.map((r) => [r.title_id, r.provider_name]));
+  for (const mediaType of mediaTypes(c.type)) {
+    const genreIds = c.genres.flatMap((key) =>
+      genres.find((g: MergedGenre) => g.key === key)?.[mediaType === 'movie' ? 'movie_ids' : 'tv_ids'] ?? [],
+    );
+    if (c.genres.length > 0 && genreIds.length === 0) continue;
+    const common: Record<string, string> = { ...services, include_adult: 'false' };
+    if (genreIds.length > 0) common.with_genres = genreIds.join('|');
+    if (budget != null) common['with_runtime.lte'] = String(budget);
+
+    if (mediaType === 'movie') {
+      queries.push({
+        mediaType,
+        source: 'new_release',
+        params: {
+          ...common,
+          region: getSetting('region'),
+          with_release_type: '4',
+          'release_date.gte': recent,
+          'release_date.lte': today,
+          'vote_count.gte': '20',
+          sort_by: 'primary_release_date.desc',
+        },
+      });
+    } else {
+      queries.push({
+        mediaType,
+        source: 'new_release',
+        params: {
+          ...common,
+          'first_air_date.gte': recent,
+          'first_air_date.lte': today,
+          'vote_count.gte': '20',
+          sort_by: 'first_air_date.desc',
+        },
+      });
+      queries.push({
+        mediaType,
+        source: 'airing_now',
+        params: {
+          ...common,
+          'air_date.gte': airing,
+          'air_date.lte': today,
+          'vote_count.gte': '50',
+          sort_by: 'popularity.desc',
+        },
+      });
+    }
+
+    queries.push({
+      mediaType,
+      source: 'popular',
+      params: {
+        ...common,
+        [`${mediaType === 'movie' ? 'primary_release_date' : 'first_air_date'}.lte`]: today,
+        'vote_count.gte': '200',
+        sort_by: 'popularity.desc',
+      },
+    });
+  }
+  return queries;
 }
 
-/** Per-title suggestion history in the last 7 days: skipped weighs heavier than merely shown. */
-function recentSuggestions(): Map<number, { skipped: boolean }> {
-  const cutoff = new Date(Date.now() - 7 * DAY).toISOString();
-  const rows = db()
-    .prepare(`
-      SELECT title_id, MAX(CASE WHEN action = 'skipped' THEN 1 ELSE 0 END) AS skipped
-      FROM suggestion_log WHERE created_at >= ? GROUP BY title_id
-    `)
-    .all(cutoff) as { title_id: number; skipped: number }[];
-  return new Map(rows.map((r) => [r.title_id, { skipped: r.skipped === 1 }]));
+function sourceBoost(source: PickSource): number {
+  if (source === 'new_release') return 0.3;
+  if (source === 'airing_now') return 0.2;
+  return 0;
 }
 
-/** Shows with at least one fully aired season that still has unwatched episodes (CR-02 bingeable + unwatched). */
-function bingeableUnwatchedIds(today: string): Set<number> {
-  const rows = db()
-    .prepare(`
-      SELECT DISTINCT s.title_id FROM seasons s
-      WHERE s.title_id IN (SELECT title_id FROM bingeable_titles)
-        AND s.season_number > 0
-        AND EXISTS (SELECT 1 FROM episodes e WHERE e.season_id = s.id AND e.watched_at IS NULL)
-        AND NOT EXISTS (SELECT 1 FROM episodes e WHERE e.season_id = s.id AND (e.air_date IS NULL OR e.air_date > ?))
-    `)
-    .all(today) as { title_id: number }[];
-  return new Set(rows.map((r) => r.title_id));
+function sourcePriority(source: PickSource): number {
+  return source === 'new_release' ? 2 : source === 'airing_now' ? 1 : 0;
 }
 
-// ---- mood (genre) matching ----
-
-interface MoodChip {
-  key: string;
-  names: string[]; // TMDB genre names for the merged key; empty = fall back to key-pattern match
-}
-
-async function resolveMood(keys: string[]): Promise<MoodChip[]> {
-  if (keys.length === 0) return [];
-  // Offline with a cold genre cache: match the key loosely against the stored
-  // genre names, mirroring libraryGrid's LIKE fallback.
-  const genres = await getGenres().catch(() => [] as MergedGenre[]);
-  return keys.map((key) => ({ key, names: genres.find((g) => g.key === key)?.names ?? [] }));
-}
-
-function chipMatches(chip: MoodChip, cand: Cand): boolean {
-  if (chip.names.length > 0) return chip.names.some((n) => cand.genres.includes(n));
-  return new RegExp(chip.key.split('-').join('.*'), 'i').test(cand.genres_raw);
-}
-
-// ---- scoring & selection ----
-
-function monthsAgo(iso: string): number {
-  return Math.max(1, Math.round((Date.now() - Date.parse(iso)) / (30 * DAY)));
-}
-
-function bestRating(c: Cand): number | null {
-  if (c.rt_score != null) return c.rt_score / 10;
-  return c.imdb_rating ?? c.tmdb_rating;
-}
-
-function scoreCandidate(
-  c: Cand,
-  moodCount: number,
-  arrivals: Map<number, string>,
-  suggested: Map<number, { skipped: boolean }>,
+export function calculateCandidateScore(
+  rating: number | null,
+  popularityPercentile: number,
+  source: PickSource,
+  history?: { skipped: boolean },
 ): number {
-  const best = bestRating(c); // 0-10 scale
-  let score = best != null ? Math.min(Math.max(best / 10, 0), 1) : 0.5; // unrated stays reachable, not favored
-  if (c.kind === 'continue' && c.watched_count > 0) score += 0.3;
-  if (arrivals.has(c.title_id)) score += 0.2;
-  if (c.status === 'wishlist' && Date.now() - Date.parse(c.added_at) > 90 * DAY) score += 0.15;
-  if (moodCount > 0) score += 0.1 * (c.mood_matched / moodCount);
-  const hist = suggested.get(c.title_id);
-  if (hist) score -= hist.skipped ? 0.5 : 0.25;
-  return Math.max(score, 0.05);
+  const quality = (rating ?? 5) / 10;
+  let score = 0.55 * quality + 0.25 * popularityPercentile + sourceBoost(source);
+  if (history) score -= history.skipped ? 0.5 : 0.25;
+  return score;
 }
 
-// Temperature tuned so a +0.30 score edge is ~4-5x more likely, keeping roughly
-// the top third of the pool realistically reachable while nothing is impossible.
-const TEMPERATURE = 0.2;
+function toCandidate(entry: tmdb.ListEntry, query: DiscoveryQuery): DiscoveryCandidate {
+  const date = query.mediaType === 'movie' ? entry.release_date : entry.first_air_date;
+  return {
+    key: `${query.mediaType}:${entry.id}`,
+    tmdb_id: entry.id,
+    library_id: null,
+    media_type: query.mediaType,
+    name: (query.mediaType === 'movie' ? entry.title : entry.name) ?? '(untitled)',
+    year: date ? Number(date.slice(0, 4)) || null : null,
+    poster_path: entry.poster_path ?? null,
+    rating: entry.vote_average ?? null,
+    popularity: entry.popularity ?? 0,
+    source: query.source,
+    score: 0,
+  };
+}
 
-function softmaxDraw(pool: Cand[]): Cand {
-  const weights = pool.map((c) => Math.exp(c.score / TEMPERATURE));
-  let r = Math.random() * weights.reduce((a, b) => a + b, 0);
+function attachLibraryState(candidates: DiscoveryCandidate[], constraints: PickConstraints): DiscoveryCandidate[] {
+  if (candidates.length === 0) return candidates;
+  const result: DiscoveryCandidate[] = [];
+  const suppressed = new Set(
+    (db().prepare('SELECT media_type, tmdb_id FROM suggestion_suppressions').all() as { media_type: string; tmdb_id: number }[])
+      .map((r) => `${r.media_type}:${r.tmdb_id}`),
+  );
+
+  for (const mediaType of ['movie', 'tv'] as const) {
+    const subset = candidates.filter((candidate) => candidate.media_type === mediaType);
+    if (subset.length === 0) continue;
+    const ids = subset.map((candidate) => candidate.tmdb_id);
+    const rows = db().prepare(`
+      SELECT t.id, t.tmdb_id, us.status, us.never_suggest
+      FROM titles t
+      LEFT JOIN user_state us ON us.title_id = t.id
+      WHERE t.media_type = ? AND t.tmdb_id IN (${ids.map(() => '?').join(',')})
+    `).all(mediaType, ...ids) as { id: number; tmdb_id: number; status: string | null; never_suggest: number | null }[];
+    const state = new Map(rows.map((row) => [row.tmdb_id, row]));
+    for (const candidate of subset) {
+      const stored = state.get(candidate.tmdb_id);
+      const tracked = stored?.status ? stored : undefined;
+      if (suppressed.has(candidate.key) || tracked?.never_suggest === 1) continue;
+      if (shouldExcludeLibraryTitle(tracked, constraints.exclude_library_titles)) continue;
+      candidate.library_id = tracked?.id ?? null;
+      result.push(candidate);
+    }
+  }
+  return result;
+}
+
+interface SuggestionHistory {
+  skipped: boolean;
+  lastSuggested: string;
+}
+
+function recentSuggestions(): Map<string, SuggestionHistory> {
+  const cutoff = new Date(Date.now() - HISTORY_PENALTY_DAYS * DAY).toISOString();
+  const rows = db().prepare(`
+    SELECT media_type, tmdb_id,
+           MAX(CASE WHEN action = 'skipped' THEN 1 ELSE 0 END) AS skipped,
+           MAX(created_at) AS last_suggested
+    FROM suggestion_log WHERE created_at >= ? GROUP BY media_type, tmdb_id
+  `).all(cutoff) as { media_type: string; tmdb_id: number; skipped: number; last_suggested: string }[];
+  return new Map(rows.map((r) => [
+    `${r.media_type}:${r.tmdb_id}`,
+    { skipped: r.skipped === 1, lastSuggested: r.last_suggested },
+  ]));
+}
+
+function scoreCandidates(candidates: DiscoveryCandidate[], history: Map<string, SuggestionHistory>): void {
+  const ordered = [...candidates].sort((a, b) => a.popularity - b.popularity);
+  const percentile = new Map(ordered.map((candidate, index) => [candidate.key, ordered.length === 1 ? 1 : index / (ordered.length - 1)]));
+  for (const candidate of candidates) {
+    const hist = history.get(candidate.key);
+    candidate.score = calculateCandidateScore(
+      candidate.rating,
+      percentile.get(candidate.key) ?? 0,
+      candidate.source,
+      hist,
+    );
+  }
+}
+
+function softmaxDraw(pool: DiscoveryCandidate[]): DiscoveryCandidate {
+  const weights = pool.map((candidate) => Math.exp(candidate.score / TEMPERATURE));
+  let draw = Math.random() * weights.reduce((sum, weight) => sum + weight, 0);
   for (let i = 0; i < pool.length; i++) {
-    r -= weights[i];
-    if (r <= 0) return pool[i];
+    draw -= weights[i];
+    if (draw <= 0) return pool[i];
   }
   return pool[pool.length - 1];
 }
 
-// ---- card assembly ----
+async function runtimeFor(candidate: DiscoveryCandidate): Promise<{ minutes: number; estimated: boolean }> {
+  const key = `pick_runtime:${candidate.media_type}:${candidate.tmdb_id}`;
+  const cached = cacheGet(key, DAY);
+  if (cached?.fresh) return cached.payload as { minutes: number; estimated: boolean };
+  try {
+    let runtime: number | null | undefined;
+    if (candidate.media_type === 'movie') {
+      runtime = (await tmdb.movieDetails(candidate.tmdb_id)).runtime;
+    } else {
+      runtime = (await tmdb.tvDetails(candidate.tmdb_id)).episode_run_time[0];
+    }
+    const payload = {
+      minutes: runtime ?? (candidate.media_type === 'movie' ? 120 : 45),
+      estimated: runtime == null,
+    };
+    cacheSet(key, payload);
+    return payload;
+  } catch (err) {
+    if (cached) return cached.payload as { minutes: number; estimated: boolean };
+    throw err;
+  }
+}
 
-function buildReasons(
-  c: Cand,
-  offers: PickOffer[],
-  moodChips: MoodChip[],
-  arrivals: Map<number, string>,
-): string[] {
+function reasonsFor(candidate: DiscoveryCandidate, offers: WatchOffer[], c: PickConstraints): string[] {
   const reasons: string[] = [];
-  if (c.rt_score != null) reasons.push(`${c.rt_score}% RT`);
-  else if (c.imdb_rating != null) reasons.push(`${c.imdb_rating} IMDb`);
-  else if (c.tmdb_rating != null) reasons.push(`${c.tmdb_rating.toFixed(1)} TMDB`);
-
-  const arrival = arrivals.get(c.title_id);
-  const streaming = offers.filter((o) => STREAM_TYPES.has(o.offer_type));
-  if (arrival) reasons.push(`Just landed on ${arrival}`);
-  else if (streaming.length > 0) reasons.push(`On ${streaming[0].name}`);
-  else if (offers.length > 0) reasons.push(`Rent/buy on ${offers[0].name}`);
-
-  if (c.kind === 'continue' && c.watched_count > 0) {
-    if (c.season_remaining === 1) reasons.push(`Last episode of S${c.season_number}`);
-    else if (c.episode_number === 1) reasons.push(`Start S${c.season_number}`);
-    else reasons.push(`You're ${c.season_remaining} episodes from finishing S${c.season_number}`);
-  } else if (c.kind === 'start' && c.status === 'wishlist') {
-    const m = monthsAgo(c.added_at);
-    if (m >= 3) reasons.push(`On your wishlist for ${m} months`);
-  } else if (c.kind === 'rewatch' && c.last_watched) {
-    reasons.push(`You watched this ${monthsAgo(c.last_watched)} months ago`);
-  }
-
-  if (moodChips.length > 0 && c.mood_matched === moodChips.length) {
-    reasons.push('Matches your mood');
-  }
+  if (candidate.source === 'new_release') reasons.push('Released in the last 30 days');
+  else if (candidate.source === 'airing_now') reasons.push('Airing now');
+  else reasons.push('Popular right now');
+  if (candidate.rating != null) reasons.push(`${candidate.rating.toFixed(1)} TMDB`);
+  if (offers[0]) reasons.push(`On ${offers[0].provider_name}`);
+  if (c.genres.length > 0) reasons.push('Matches your mood');
   return reasons;
 }
 
-function toCard(c: Cand, offers: PickOffer[], moodChips: MoodChip[], arrivals: Map<number, string>, budget: number | null): PickCandidate {
-  const streaming = offers.some((o) => STREAM_TYPES.has(o.offer_type));
-  return {
-    title_id: c.title_id,
-    media_type: c.media_type,
-    name: c.name,
-    year: c.year,
-    poster_path: c.poster_path,
-    kind: c.kind,
-    episode_id: c.episode_id,
-    season_number: c.season_number,
-    episode_number: c.episode_number,
-    episode_name: c.episode_name,
-    runtime: c.runtime,
-    runtime_estimated: c.runtime_estimated,
-    fits_episodes:
-      c.media_type === 'tv' && budget != null && budget < 120 && c.runtime > 0 && Math.floor(budget / c.runtime) > 1
-        ? Math.min(Math.floor(budget / c.runtime), c.season_remaining || 1)
-        : null,
-    providers: offers,
-    rent_buy_only: offers.length > 0 && !streaming,
-    reasons: buildReasons(c, offers, moodChips, arrivals),
-  };
+function empty(message: string, loosen: Loosen[] = []): PickResult {
+  return { candidate: null, pool_size: 0, empty: { message, loosen } };
 }
 
-// ---- the main entry point ----
+export async function pickNext(c: PickConstraints, exclude: string[]): Promise<PickResult> {
+  if (c.my_services_only && enabledServiceIds().size === 0) {
+    return empty('Choose streaming services in Settings, or allow recommendations from any service.', [
+      { label: 'Any service', patch: { my_services_only: false, include_rent_buy: false } },
+    ]);
+  }
 
-const TIME_STEPS = [30, 45, 60, 90];
+  const queries = await buildQueries(c);
+  const settled = await Promise.allSettled(queries.map(async (query) => ({ query, page: await cachedDiscover(query) })));
+  const fulfilled = settled.filter((r): r is PromiseFulfilledResult<{ query: DiscoveryQuery; page: tmdb.DiscoverPage }> => r.status === 'fulfilled');
+  if (fulfilled.length === 0 && settled.length > 0) throw (settled[0] as PromiseRejectedResult).reason;
 
-export async function pickNext(c: PickConstraints, exclude: number[]): Promise<PickResult> {
-  const today = localToday();
-  const offers = myOffers();
-  const arrivals = recentArrivals();
-  const suggested = recentSuggestions();
-  const moodChips = await resolveMood(c.genres);
+  const deduped = new Map<string, DiscoveryCandidate>();
+  for (const { query, page } of fulfilled.map((r) => r.value)) {
+    for (const entry of page.results) {
+      const candidate = toCandidate(entry, query);
+      const existing = deduped.get(candidate.key);
+      if (!existing || sourcePriority(candidate.source) > sourcePriority(existing.source)) deduped.set(candidate.key, candidate);
+    }
+  }
 
-  // Pool: continue watching + start something (+ rewatches when allowed).
-  let pool: Cand[] = [...tvPool(today), ...moviePool()];
-  if (!c.unwatched_only) pool.push(...rewatchPool(today));
-
-  const empty = (message: string, loosen: Loosen[]): PickResult => ({ candidate: null, pool_size: 0, empty: { message, loosen } });
-
+  let pool = attachLibraryState([...deduped.values()], c);
   if (pool.length === 0) {
-    return empty(
-      'Your library has nothing to suggest — everything is watched, dropped, or not out yet.',
-      c.unwatched_only ? [{ label: 'Include rewatches', patch: { unwatched_only: false } }] : [],
-    );
+    return empty('No current titles match these filters.', [
+      ...(c.genres.length > 0 ? [{ label: 'Any mood', patch: { genres: [] } as Partial<PickConstraints> }] : []),
+      ...(c.my_services_only ? [{ label: 'Any service', patch: { my_services_only: false } as Partial<PickConstraints> }] : []),
+      ...(c.time != null ? [{ label: 'No time limit', patch: { time: null } as Partial<PickConstraints> }] : []),
+      ...(c.exclude_library_titles
+        ? [{ label: 'Include tracked titles', patch: { exclude_library_titles: false } as Partial<PickConstraints> }]
+        : []),
+    ]);
   }
 
-  // Constraint filters, applied one at a time so an empty result can name the
-  // exact constraint that eliminated everything.
-  if (c.type !== 'either') {
-    const mt = c.type === 'movie' ? 'movie' : 'tv';
-    pool = pool.filter((x) => x.media_type === mt);
-    if (pool.length === 0) {
-      return empty(
-        c.type === 'movie' ? 'No movies to suggest right now.' : 'No episodes to suggest right now.',
-        [{ label: 'Movies & episodes', patch: { type: 'either' } }],
-      );
-    }
+  const history = recentSuggestions();
+  const cooldown = Date.now() - REPEAT_COOLDOWN_DAYS * DAY;
+  pool = pool.filter((candidate) => {
+    const last = history.get(candidate.key)?.lastSuggested;
+    return !last || Date.parse(last) < cooldown;
+  });
+  if (pool.length === 0) {
+    return empty(`You have already seen every matching recommendation in the last ${REPEAT_COOLDOWN_DAYS} days. Try again later or adjust the filters.`);
   }
 
-  if (moodChips.length > 0) {
-    for (const x of pool) x.mood_matched = moodChips.filter((chip) => chipMatches(chip, x)).length;
-    pool = pool.filter((x) => x.mood_matched > 0);
-    if (pool.length === 0) {
-      return empty('Nothing in your library matches that mood.', [{ label: 'Any mood', patch: { genres: [] } }]);
-    }
-  }
-
-  if (c.my_services_only) {
-    const allowed = c.include_rent_buy
-      ? () => true
-      : (o: PickOffer) => STREAM_TYPES.has(o.offer_type);
-    const hasServices = (db().prepare('SELECT COUNT(*) AS n FROM my_services WHERE enabled = 1').get() as { n: number }).n > 0;
-    pool = pool.filter((x) => (offers.get(x.title_id) ?? []).some(allowed));
-    if (pool.length === 0) {
-      if (!hasServices) {
-        return empty('You haven’t picked any streaming services in Settings, so nothing passes "on my services".', [
-          { label: 'Any service', patch: { my_services_only: false } },
-        ]);
-      }
-      return empty(
-        c.include_rent_buy ? 'Nothing is available on your services, even to rent or buy.' : 'Nothing streams on your services right now.',
-        [
-          ...(c.include_rent_buy ? [] : [{ label: 'Include rent/buy', patch: { include_rent_buy: true } as Partial<PickConstraints> }]),
-          { label: 'Any service', patch: { my_services_only: false } },
-        ],
-      );
-    }
-  }
+  const seen = new Set(exclude);
+  const poolSize = pool.length;
+  pool = pool.filter((candidate) => !seen.has(candidate.key));
+  if (pool.length === 0) return { candidate: null, pool_size: poolSize, exhausted: true };
+  scoreCandidates(pool, history);
 
   const budget = c.time != null && c.time < 120 ? c.time : null;
-  if (budget != null) {
-    pool = pool.filter((x) => x.runtime <= budget);
-    if (pool.length === 0) {
-      const next = TIME_STEPS.find((t) => t > budget);
-      const where = c.my_services_only ? ' on your services' : '';
-      return empty(`Nothing under ${budget} min${where}.`, [
-        ...(next ? [{ label: `Try ${next} min`, patch: { time: next } as Partial<PickConstraints> }] : []),
-        { label: 'No time limit', patch: { time: null } },
-        ...(c.my_services_only && !c.include_rent_buy
-          ? [{ label: 'Include rent/buy', patch: { include_rent_buy: true } as Partial<PickConstraints> }]
-          : []),
+  const drawable = [...pool];
+  while (drawable.length > 0) {
+    const candidate = softmaxDraw(drawable);
+    const index = drawable.findIndex((item) => item.key === candidate.key);
+    drawable.splice(index, 1);
+    try {
+      const [runtime, offers] = await Promise.all([
+        runtimeFor(candidate),
+        offersForTitle(candidate.media_type, candidate.tmdb_id, {
+          myServicesOnly: c.my_services_only,
+          includeRentBuy: c.include_rent_buy,
+        }),
       ]);
+      if (offers.length === 0 || (budget != null && runtime.minutes > budget)) continue;
+      logSuggestion(candidate.media_type, candidate.tmdb_id, candidate.library_id, 'shown', c);
+      return {
+        candidate: {
+          key: candidate.key,
+          tmdb_id: candidate.tmdb_id,
+          library_id: candidate.library_id,
+          media_type: candidate.media_type,
+          name: candidate.name,
+          year: candidate.year,
+          poster_path: candidate.poster_path,
+          source: candidate.source,
+          runtime: runtime.minutes,
+          runtime_estimated: runtime.estimated,
+          providers: offers,
+          rent_buy_only: offers.every((offer) => !STREAM_TYPES.has(offer.offer_type)),
+          reasons: reasonsFor(candidate, offers, c),
+        },
+        pool_size: poolSize,
+      };
+    } catch {
+      continue;
     }
   }
 
-  if (c.bingeable_only) {
-    const bingeable = bingeableUnwatchedIds(today);
-    pool = pool.filter((x) => x.media_type === 'tv' && bingeable.has(x.title_id));
-    if (pool.length === 0) {
-      return empty('No show has a fully aired season left to binge under these filters.', [
-        { label: 'Not just bingeable', patch: { bingeable_only: false } },
-      ]);
-    }
-  }
-
-  const poolSize = pool.length;
-  const seen = new Set(exclude);
-  const drawable = pool.filter((x) => !seen.has(x.title_id));
-  if (drawable.length === 0) {
-    return { candidate: null, pool_size: poolSize, exhausted: true };
-  }
-
-  for (const x of drawable) x.score = scoreCandidate(x, moodChips.length, arrivals, suggested);
-  const picked = softmaxDraw(drawable);
-  return {
-    candidate: toCard(picked, offers.get(picked.title_id) ?? [], moodChips, arrivals, budget),
-    pool_size: poolSize,
-  };
+  return empty('Availability changed while checking these titles. Try broader filters or try again shortly.', [
+    ...(c.my_services_only ? [{ label: 'Any service', patch: { my_services_only: false } as Partial<PickConstraints> }] : []),
+    ...(c.time != null ? [{ label: 'No time limit', patch: { time: null } as Partial<PickConstraints> }] : []),
+  ]);
 }
 
-// ---- suggestion log ----
+export function logSuggestion(
+  mediaType: 'movie' | 'tv',
+  tmdbId: number,
+  titleId: number | null,
+  action: 'shown' | 'accepted' | 'shuffled' | 'skipped',
+  constraints: unknown,
+): void {
+  db().prepare(`
+    INSERT INTO suggestion_log (title_id, tmdb_id, media_type, episode_id, action, constraints, created_at)
+    VALUES (?, ?, ?, NULL, ?, ?, ?)
+  `).run(titleId, tmdbId, mediaType, action, JSON.stringify(constraints ?? {}), nowIso());
+}
 
-export function logSuggestion(titleId: number, episodeId: number | null, action: 'accepted' | 'shuffled' | 'skipped', constraints: unknown): void {
-  db()
-    .prepare('INSERT INTO suggestion_log (title_id, episode_id, action, constraints, created_at) VALUES (?, ?, ?, ?, ?)')
-    .run(titleId, episodeId, action, JSON.stringify(constraints ?? {}), nowIso());
+export function setSuggestionSuppressed(mediaType: 'movie' | 'tv', tmdbId: number, suppressed: boolean): void {
+  if (suppressed) {
+    db().prepare('INSERT OR IGNORE INTO suggestion_suppressions (media_type, tmdb_id, created_at) VALUES (?, ?, ?)')
+      .run(mediaType, tmdbId, nowIso());
+  } else {
+    db().prepare('DELETE FROM suggestion_suppressions WHERE media_type = ? AND tmdb_id = ?').run(mediaType, tmdbId);
+  }
+  db().prepare(`
+    UPDATE user_state SET never_suggest = ?, updated_at = ?
+    WHERE title_id IN (SELECT id FROM titles WHERE media_type = ? AND tmdb_id = ?)
+  `).run(suppressed ? 1 : 0, nowIso(), mediaType, tmdbId);
 }

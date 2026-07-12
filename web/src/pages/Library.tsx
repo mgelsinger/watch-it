@@ -3,7 +3,16 @@ import { useApi } from '../api';
 import type { Card } from '../types';
 import PosterCard from '../components/PosterCard';
 
-const STATUSES = ['all', 'watching', 'wishlist', 'watched', 'paused', 'dropped'] as const;
+const STATUSES = ['all', 'watching', 'wishlist', 'saved', 'watched', 'paused', 'dropped'] as const;
+const STATUS_LABELS: Record<(typeof STATUSES)[number], string> = {
+  all: 'All',
+  watching: 'Watching',
+  wishlist: 'Watchlist',
+  saved: 'Saved for Later',
+  watched: 'Watched',
+  paused: 'Paused',
+  dropped: 'Dropped',
+};
 
 export default function Library() {
   const [status, setStatus] = useState<(typeof STATUSES)[number]>('all');
@@ -17,7 +26,7 @@ export default function Library() {
       <div className="toolbar" role="tablist" aria-label="Filter by status">
         {STATUSES.map((s) => (
           <button key={s} className={`pill ${s === status ? 'on' : ''}`} onClick={() => setStatus(s)} role="tab" aria-selected={s === status}>
-            {s}
+            {STATUS_LABELS[s]}
           </button>
         ))}
         {data && <span className="faint">{data.titles.length} titles</span>}
@@ -38,7 +47,9 @@ export default function Library() {
             name={c.name}
             year={c.year}
             posterPath={c.poster_path}
-            sub={`${c.media_type === 'tv' ? 'TV' : 'Movie'} · ${c.user_status}`}
+            sub={`${c.media_type === 'tv' ? 'TV' : 'Movie'} · ${
+              c.user_status === 'wishlist' ? 'Watchlist' : c.user_status === 'saved' ? 'Saved for Later' : c.user_status
+            }`}
             scores={{ rt: c.rt_score, imdb: c.imdb_rating, mc: c.metacritic, tmdb: c.tmdb_rating }}
             offers={c.my_offers}
           />

@@ -6,7 +6,7 @@ export interface BrowseState {
   genres: string[];
   watch: 'any' | 'my' | 'streaming' | 'broadcast';
   status: '' | 'returning' | 'ended' | 'canceled';
-  lib: '' | 'not_added' | 'wishlist' | 'watching' | 'watched' | 'dropped';
+  lib: '' | 'not_added' | 'saved' | 'wishlist' | 'watching' | 'watched' | 'dropped';
   ymin: string;
   ymax: string;
   rating: '' | '6' | '7' | '8';
@@ -88,7 +88,8 @@ export default function FilterBar({ state, genres, onChange }: {
       <select value={s.lib} onChange={(e) => onChange({ lib: e.target.value as BrowseState['lib'] })} aria-label="Library status">
         <option value="">Any library status</option>
         {!isLib && <option value="not_added">Not added</option>}
-        <option value="wishlist">Wishlist</option>
+        <option value="saved">Saved for Later</option>
+        <option value="wishlist">Watchlist</option>
         <option value="watching">Watching</option>
         <option value="watched">Watched</option>
         <option value="dropped">Dropped</option>

@@ -14,6 +14,7 @@ import * as q from '../services/queries.js';
 const EXPORT_TABLES = [
   'titles', 'user_state', 'seasons', 'episodes', 'cast_members',
   'availability', 'my_services', 'events', 'settings',
+  'suggestion_log', 'suggestion_suppressions',
 ] as const;
 
 export async function systemRoutes(app: FastifyInstance): Promise<void> {
@@ -40,9 +41,10 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
       new_tonight: q.newTonight(),
       returning_soon: q.returningSoon(),
       wishlist_available: q.wishlistAvailable(),
+      saved_for_later: q.savedForLater(),
       now_streaming: q.nowStreamingRow(),
-      new_on_services: q.newOnServicesRow(),
-      new_disc_digital: q.newDiscDigitalRow(),
+      new_on_services: await q.newOnServicesRow(),
+      new_disc_digital: await q.newDiscDigitalRow(),
       recently_watched: q.recentlyWatched(),
     };
   });
@@ -137,7 +139,14 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
 
   app.put('/api/settings', async (req) => {
     const body = z.record(z.string()).parse(req.body);
-    const allowed = new Set(['region', 'schedule_country', 'theme', 'broadcast_networks', 'pick_constraints']);
+    const allowed = new Set([
+      'region',
+      'schedule_country',
+      'theme',
+      'broadcast_networks',
+      'pick_constraints',
+      'pick_scope_default_v2',
+    ]);
     for (const [k, v] of Object.entries(body)) {
       if (allowed.has(k)) setSetting(k, v);
     }
@@ -237,7 +246,7 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
 
   // ---- local image cache: /img/<size>/<file> proxies image.tmdb.org and stores on disk,
   // so posters keep working offline once seen. ----
-  const SIZES = new Set(['w92', 'w154', 'w185', 'w342', 'w500', 'w780', 'w1280', 'h632', 'original']);
+  const SIZES = new Set(['w45', 'w92', 'w154', 'w185', 'w342', 'w500', 'w780', 'w1280', 'h632', 'original']);
   app.get<{ Params: { size: string; file: string } }>('/img/:size/:file', async (req, reply) => {
     const { size, file } = req.params;
     if (!SIZES.has(size) || !/^[A-Za-z0-9]+\.(jpg|png|svg)$/.test(file)) {

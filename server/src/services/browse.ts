@@ -2,6 +2,7 @@ import { getDb, getSetting, cacheGet, cacheSet } from '../db.js';
 import { nowIso, localToday } from '../config.js';
 import * as tmdb from '../sources/tmdb.js';
 import { enabledServiceIds } from './availability.js';
+import { enrichCardsWithOffers, type WatchOffer } from './providers.js';
 
 const DAY = 86400_000;
 const WEEK = 7 * DAY;
@@ -20,6 +21,7 @@ export interface BrowseCard {
   overview: string | null;
   library_id: number | null;
   user_status: string | null;
+  offers?: WatchOffer[];
 }
 
 function toCard(e: tmdb.ListEntry, mediaType: 'movie' | 'tv'): BrowseCard {
@@ -50,7 +52,7 @@ function attachLibrary(cards: BrowseCard[]): BrowseCard[] {
     const rows = db
       .prepare(`
         SELECT t.id, t.tmdb_id, us.status FROM titles t
-        LEFT JOIN user_state us ON us.title_id = t.id
+        JOIN user_state us ON us.title_id = t.id
         WHERE t.media_type = ? AND t.tmdb_id IN (${ids.map(() => '?').join(',')})
       `)
       .all(mt, ...ids) as { id: number; tmdb_id: number; status: string | null }[];
@@ -176,7 +178,11 @@ export async function genreRow(key: string): Promise<{ items: BrowseCard[]; stal
   const cacheKey = `browse_genre_row:${key}`;
   const r = await cachedFetch(cacheKey, DAY, () => buildGenreRowItems(g));
   recordQuery(cacheKey, 'genre-row', { key });
-  return { items: attachLibrary(structuredClone(r.payload)), stale: r.stale };
+  const cards = attachLibrary(structuredClone(r.payload));
+  return {
+    items: await enrichCardsWithOffers(cards, { myServicesOnly: false, includeRentBuy: false }),
+    stale: r.stale,
+  };
 }
 
 // ---- Discover grid ----
@@ -186,7 +192,7 @@ export interface BrowseFilters {
   genres: string[]; // merged genre keys
   watch: 'any' | 'my' | 'streaming' | 'broadcast';
   status: '' | 'returning' | 'ended' | 'canceled';
-  library: '' | 'not_added' | 'wishlist' | 'watching' | 'watched' | 'dropped';
+  library: '' | 'not_added' | 'saved' | 'wishlist' | 'watching' | 'watched' | 'dropped';
   yearMin: number | null;
   yearMax: number | null;
   rating: number | null;
@@ -296,7 +302,30 @@ export async function discoverGrid(f: BrowseFilters, page: number): Promise<Grid
   if (f.library === 'not_added') cards = cards.filter((c) => c.library_id === null);
   else if (f.library) cards = cards.filter((c) => c.user_status === f.library);
 
-  return { items: sortCards(cards, f.sort), page, total_pages: Math.min(totalPages, 500), stale };
+  const sorted = sortCards(cards, f.sort);
+  const items = await enrichCardsWithOffers(sorted, {
+    myServicesOnly: f.watch === 'my',
+    includeRentBuy: false,
+  });
+  return { items, page, total_pages: Math.min(totalPages, 500), stale };
+}
+
+export async function similarTitles(
+  mediaType: 'movie' | 'tv',
+  tmdbId: number,
+): Promise<{ items: BrowseCard[]; stale: boolean }> {
+  const key = `tmdb_similar:${mediaType}:${tmdbId}`;
+  const result = await cachedFetch(key, DAY, () => tmdb.similar(mediaType, tmdbId));
+  const cards = attachLibrary(
+    result.payload.results
+      .filter((entry) => entry.id !== tmdbId)
+      .map((entry) => toCard(entry, mediaType))
+      .slice(0, 20),
+  );
+  return {
+    items: await enrichCardsWithOffers(cards, { myServicesOnly: false, includeRentBuy: false }),
+    stale: result.stale,
+  };
 }
 
 // ---- Library grid (local SQL; instant, offline) ----

@@ -8,7 +8,7 @@ const FiltersQ = z.object({
   genres: z.string().default(''), // csv of merged genre keys
   watch: z.enum(['any', 'my', 'streaming', 'broadcast']).default('any'),
   status: z.enum(['', 'returning', 'ended', 'canceled']).default(''),
-  library: z.enum(['', 'not_added', 'wishlist', 'watching', 'watched', 'dropped']).default(''),
+  library: z.enum(['', 'not_added', 'saved', 'wishlist', 'watching', 'watched', 'dropped']).default(''),
   year_min: z.coerce.number().int().min(1870).max(2100).optional(),
   year_max: z.coerce.number().int().min(1870).max(2100).optional(),
   rating: z.coerce.number().min(0).max(10).optional(),

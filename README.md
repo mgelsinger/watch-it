@@ -5,6 +5,8 @@ broadcast TV, and theaters. It answers four questions instantly: **what should I
 it, what have I already watched, and when does the next thing arrive.**
 
 - Netflix-style browsing, data-dense underneath (scores, air dates, cadence, availability history)
+- Discovery-first recommendations from recent releases, currently airing TV, and popular titles across all services
+- Always-visible provider badges on recommendation and browse cards
 - All state in one SQLite file — backup = copy one file
 - Dark mode by default, light-mode toggle
 - No accounts, no telemetry, no scraping — official free APIs only (TMDB, OMDb, TVmaze)
@@ -28,8 +30,8 @@ it, what have I already watched, and when does the next thing arrive.**
    docker compose up -d
    ```
 
-4. Open <http://localhost:8300>, check Settings → API keys, pick your streaming services, and add
-   your first title via the search box.
+4. Open <http://localhost:8300> and check Settings → API keys. Choosing your own streaming services is optional:
+   Pick For Me searches all services by default and can save a result to your Watchlist or Watching category.
 
 Data lives on the named volume `watch-it-data` (SQLite at `/data/watch-it.db`) and survives
 `docker compose down && docker compose up -d`. The container restarts automatically after reboots.

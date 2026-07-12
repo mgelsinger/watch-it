@@ -157,6 +157,7 @@ const ListEntryZ = z
     vote_average: z.number().nullish(),
     vote_count: z.number().nullish(),
     popularity: z.number().nullish(),
+    genre_ids: z.array(z.number()).default([]),
     overview: z.string().nullish(),
   })
   .passthrough();
@@ -280,6 +281,11 @@ export type DiscoverPage = z.infer<typeof DiscoverPageZ>;
 /** Generic Discover call; the browse service builds and whitelists the params. */
 export async function discover(mediaType: 'movie' | 'tv', params: Record<string, string>): Promise<DiscoverPage> {
   const raw = await tmdb(`/discover/${mediaType}`, params);
+  return DiscoverPageZ.parse(raw);
+}
+
+export async function similar(mediaType: 'movie' | 'tv', id: number): Promise<DiscoverPage> {
+  const raw = await tmdb(`/${mediaType}/${id}/similar`, { page: '1' });
   return DiscoverPageZ.parse(raw);
 }
 

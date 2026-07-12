@@ -33,7 +33,8 @@ export default function Search() {
       <div className="toolbar">
         <span className="muted">Add as</span>
         <select value={addStatus} onChange={(e) => setAddStatus(e.target.value as UserStatus)}>
-          <option value="wishlist">Wishlist</option>
+          <option value="saved">Saved for Later</option>
+          <option value="wishlist">Watchlist</option>
           <option value="watching">Watching</option>
           <option value="watched">Watched</option>
         </select>

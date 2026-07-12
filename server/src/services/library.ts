@@ -9,7 +9,7 @@ import { upsertReleaseDates } from './releaseDates.js';
 import { emitEvent, eventExists } from './events.js';
 
 export type MediaType = 'movie' | 'tv';
-export type UserStatus = 'wishlist' | 'watching' | 'watched' | 'dropped' | 'paused';
+export type UserStatus = 'saved' | 'wishlist' | 'watching' | 'watched' | 'dropped' | 'paused';
 
 export interface TitleRow {
   id: number;
@@ -233,12 +233,28 @@ export async function addTitle(tmdbId: number, mediaType: MediaType, status: Use
   const existing = db
     .prepare('SELECT id FROM titles WHERE tmdb_id = ? AND media_type = ?')
     .get(tmdbId, mediaType) as { id: number } | undefined;
-  if (existing) return existing.id;
+  if (existing) {
+    db.prepare('INSERT OR IGNORE INTO user_state (title_id, status, updated_at) VALUES (?, ?, ?)')
+      .run(existing.id, status, nowIso());
+    return existing.id;
+  }
 
   // Initial availability snapshot: flagged initial_sync, no "arrived" events.
   const titleId = await fetchAndStore(tmdbId, mediaType, null, { initialSync: true });
   db.prepare('INSERT OR IGNORE INTO user_state (title_id, status, updated_at) VALUES (?, ?, ?)').run(titleId, status, nowIso());
   await refreshRatings(titleId); // best effort; quota-aware
+  return titleId;
+}
+
+/** Hydrate full details for a read-only preview without adding user_state. */
+export async function ensureTitlePreview(tmdbId: number, mediaType: MediaType): Promise<number> {
+  const db = getDb();
+  const existing = db.prepare('SELECT id FROM titles WHERE tmdb_id = ? AND media_type = ?')
+    .get(tmdbId, mediaType) as { id: number } | undefined;
+  if (existing) return existing.id;
+
+  const titleId = await fetchAndStore(tmdbId, mediaType, null, { initialSync: true });
+  await refreshRatings(titleId);
   return titleId;
 }
 

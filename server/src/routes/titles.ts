@@ -3,18 +3,20 @@ import { z } from 'zod';
 import { getDb } from '../db.js';
 import { nowIso } from '../config.js';
 import * as tmdb from '../sources/tmdb.js';
-import { addTitle, hydrateCastImdbIds, type MediaType, type UserStatus } from '../services/library.js';
+import { addTitle, ensureTitlePreview, hydrateCastImdbIds, type MediaType, type UserStatus } from '../services/library.js';
 import { refreshOneTitle } from '../services/sync.js';
 import { titleDetail, libraryList } from '../services/queries.js';
+import { setSuggestionSuppressed } from '../services/pick.js';
+import { similarTitles } from '../services/browse.js';
 
 const AddBodyZ = z.object({
   tmdb_id: z.number(),
   media_type: z.enum(['movie', 'tv']),
-  status: z.enum(['wishlist', 'watching', 'watched', 'dropped', 'paused']).default('wishlist'),
+  status: z.enum(['saved', 'wishlist', 'watching', 'watched', 'dropped', 'paused']).default('wishlist'),
 });
 
 const StateBodyZ = z.object({
-  status: z.enum(['wishlist', 'watching', 'watched', 'dropped', 'paused']).optional(),
+  status: z.enum(['saved', 'wishlist', 'watching', 'watched', 'dropped', 'paused']).optional(),
   user_rating: z.number().int().min(1).max(10).nullable().optional(),
   notes: z.string().nullable().optional(),
   watched: z.boolean().optional(), // movies only
@@ -28,7 +30,10 @@ export async function titleRoutes(app: FastifyInstance): Promise<void> {
     if (!tmdb.tmdbConfigured()) return reply.code(503).send({ error: 'TMDB API key is not configured' });
     const raw = await tmdb.searchMulti(q);
     const db = getDb();
-    const inLib = db.prepare('SELECT id FROM titles WHERE tmdb_id = ? AND media_type = ?');
+    const inLib = db.prepare(`
+      SELECT t.id FROM titles t JOIN user_state us ON us.title_id = t.id
+      WHERE t.tmdb_id = ? AND t.media_type = ?
+    `);
     const results = [];
     for (const entry of raw) {
       const parsed = tmdb.SearchResultZ.safeParse(entry);
@@ -56,6 +61,15 @@ export async function titleRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(201).send(titleDetail(id));
   });
 
+  app.post('/api/titles/preview', async (req, reply) => {
+    const body = z.object({
+      tmdb_id: z.number().int().positive(),
+      media_type: z.enum(['movie', 'tv']),
+    }).parse(req.body);
+    const id = await ensureTitlePreview(body.tmdb_id, body.media_type);
+    return reply.code(200).send(titleDetail(id));
+  });
+
   // Add from TVmaze schedule (IMDb id preferred, falls back to name search).
   app.post('/api/titles/from-external', async (req, reply) => {
     const body = z.object({ imdb_id: z.string().nullish(), name: z.string() }).parse(req.body);
@@ -78,6 +92,17 @@ export async function titleRoutes(app: FastifyInstance): Promise<void> {
     const detail = titleDetail(Number(req.params.id));
     if (!detail) return reply.code(404).send({ error: 'title not found' });
     return detail;
+  });
+
+  app.get<{ Params: { id: string } }>('/api/titles/:id/similar', async (req, reply) => {
+    const title = getDb().prepare('SELECT tmdb_id, media_type FROM titles WHERE id = ?')
+      .get(Number(req.params.id)) as { tmdb_id: number; media_type: MediaType } | undefined;
+    if (!title) return reply.code(404).send({ error: 'title not found' });
+    try {
+      return await similarTitles(title.media_type, title.tmdb_id);
+    } catch (err) {
+      return reply.code(502).send({ error: `Similar titles are unavailable: ${(err as Error).message}` });
+    }
   });
 
   app.delete<{ Params: { id: string } }>('/api/titles/:id', async (req, reply) => {
@@ -135,6 +160,23 @@ export async function titleRoutes(app: FastifyInstance): Promise<void> {
       }
     }
     db.prepare(`UPDATE user_state SET ${sets.join(', ')} WHERE title_id = ?`).run(...vals, id);
+    if (body.never_suggest !== undefined) {
+      const title = db.prepare('SELECT tmdb_id, media_type FROM titles WHERE id = ?').get(id) as
+        | { tmdb_id: number; media_type: MediaType }
+        | undefined;
+      if (title) setSuggestionSuppressed(title.media_type, title.tmdb_id, body.never_suggest);
+    }
+    const detail = titleDetail(id);
+    if (!detail) return reply.code(404).send({ error: 'title not found' });
+    return detail;
+  });
+
+  app.delete<{ Params: { id: string } }>('/api/titles/:id/state', async (req, reply) => {
+    const id = Number(req.params.id);
+    const db = getDb();
+    const title = db.prepare('SELECT id FROM titles WHERE id = ?').get(id);
+    if (!title) return reply.code(404).send({ error: 'title not found' });
+    db.prepare('DELETE FROM user_state WHERE title_id = ?').run(id);
     const detail = titleDetail(id);
     if (!detail) return reply.code(404).send({ error: 'title not found' });
     return detail;

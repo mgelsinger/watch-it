@@ -273,6 +273,32 @@ h2.row-title {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.card .card-provider {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 18px;
+}
+.card .card-provider img {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+.card .card-provider > span:not(.provider-more) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card .provider-more {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
 .card .quick {
   display: none;
   position: absolute;
@@ -402,6 +428,9 @@ h2.row-title {
   grid-template-columns: 2fr 1fr;
   gap: 28px;
 }
+.detail-grid > * {
+  min-width: 0;
+}
 @media (max-width: 980px) {
   .detail-grid {
     grid-template-columns: 1fr;
@@ -413,6 +442,8 @@ h2.row-title {
   border-radius: 10px;
   padding: 14px 16px;
   margin-bottom: 16px;
+  min-width: 0;
+  max-width: 100%;
 }
 .panel h3 {
   margin: 0 0 10px;
@@ -420,6 +451,57 @@ h2.row-title {
   text-transform: uppercase;
   letter-spacing: 0.6px;
   color: var(--text-muted);
+}
+
+.carousel {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 36px;
+  align-items: stretch;
+  gap: 6px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+.carousel-track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 154px;
+  gap: 12px;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  padding: 4px 2px 14px;
+}
+.carousel-track::-webkit-scrollbar {
+  display: none;
+}
+.carousel-track .card {
+  scroll-snap-align: start;
+}
+.carousel-control {
+  align-self: stretch;
+  border-radius: 8px;
+  padding: 0;
+  min-height: 220px;
+  font-size: 34px;
+  line-height: 1;
+  background: color-mix(in srgb, var(--bg-hover) 82%, transparent);
+}
+.carousel-control:disabled {
+  visibility: hidden;
+}
+@media (max-width: 560px) {
+  .carousel {
+    grid-template-columns: 30px minmax(0, 1fr) 30px;
+    gap: 4px;
+  }
+  .carousel-control {
+    min-height: 180px;
+    font-size: 28px;
+  }
 }
 
 .season {
@@ -871,6 +953,9 @@ h2.row-title {
   flex-wrap: wrap;
   gap: 10px;
 }
+.pick-scope-note {
+  align-self: center;
+}
 .pick-go {
   font-size: 16px;
   padding: 10px 28px;
@@ -884,6 +969,47 @@ h2.row-title {
   border-radius: 12px;
   padding: 20px;
   align-items: flex-start;
+}
+.pick-card-link {
+  position: relative;
+  cursor: pointer;
+}
+.pick-details-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: inherit;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.pick-details-hit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+.pick-details-hit:hover,
+.pick-details-hit:active,
+.pick-details-hit:disabled {
+  background: transparent;
+  filter: none;
+}
+.pick-card-link .pick-actions {
+  position: relative;
+  z-index: 2;
+  pointer-events: none;
+}
+.pick-card-link .pick-actions button,
+.pick-card-link .pick-confirm {
+  pointer-events: auto;
+}
+.pick-card-link .pick-actions button {
+  cursor: pointer;
+}
+.detail-back {
+  margin-bottom: 12px;
 }
 .pick-poster {
   width: 260px;
@@ -931,6 +1057,38 @@ h2.row-title {
   color: var(--accent);
   font-weight: 600;
 }
+.pick-notice {
+  border: 1px solid var(--good);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--good) 10%, var(--bg-raised));
+  color: var(--text);
+  padding: 9px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.pick-providers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.pick-provider {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 9px 4px 5px;
+  background: var(--bg-hover);
+  font-size: 12px;
+}
+.pick-provider img {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  object-fit: cover;
+}
 .pick-actions {
   display: flex;
   flex-wrap: wrap;
@@ -952,7 +1110,8 @@ h2.row-title {
     text-align: center;
   }
   .pick-actions,
-  .pick-badges {
+  .pick-badges,
+  .pick-providers {
     justify-content: center;
   }
 }

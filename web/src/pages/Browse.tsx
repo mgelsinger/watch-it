@@ -18,7 +18,7 @@ function fromParams(sp: URLSearchParams): BrowseState {
     genres: (sp.get('genres') ?? '').split(',').filter(Boolean),
     watch: pick('watch', ['any', 'my', 'streaming', 'broadcast'] as const, 'any'),
     status: pick('status', ['returning', 'ended', 'canceled'] as const, '' as const),
-    lib: pick('lib', ['not_added', 'wishlist', 'watching', 'watched', 'dropped'] as const, '' as const),
+    lib: pick('lib', ['not_added', 'saved', 'wishlist', 'watching', 'watched', 'dropped'] as const, '' as const),
     ymin: sp.get('ymin') ?? '',
     ymax: sp.get('ymax') ?? '',
     rating: pick('rating', ['6', '7', '8'] as const, '' as const),
@@ -72,6 +72,7 @@ function BrowseCardView({ c, onAdd }: { c: BrowseCard; onAdd: (c: BrowseCard) =>
       scores={{ tmdb: c.tmdb_rating }}
       typeBadge={c.media_type === 'movie' ? 'Movie' : 'TV'}
       statusBadge={c.user_status ?? undefined}
+      offers={c.offers}
       onAdd={c.library_id ? undefined : () => onAdd(c)}
     />
   );
@@ -200,7 +201,7 @@ function DiscoverGrid({ query }: { query: string }) {
 
   return (
     <>
-      {stale && <div className="stale-note">⚠ TMDB is unreachable — showing cached results, which may be out of date.</div>}
+      {stale && <div className="stale-note">TMDB is unreachable - showing cached results, which may be out of date.</div>}
       {error && items.length === 0 && <p className="muted">{error}</p>}
       <div className="grid">
         {items.map((c) => (
