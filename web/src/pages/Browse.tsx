@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, fmtDate, useApi } from '../api';
 import type { BrowseCard, BrowseGenre, BrowseGridPage, TitleDetail } from '../types';
-import FilterBar, { DEFAULT_STATE, anyFilterActive, type BrowseState } from '../components/FilterBar';
+import FilterBar, { anyFilterActive, type BrowseState } from '../components/FilterBar';
 import PosterCard from '../components/PosterCard';
 
 // ---- URL <-> state (filters live in query params so views are bookmarkable) ----

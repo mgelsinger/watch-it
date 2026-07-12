@@ -91,6 +91,22 @@ The More Like This button loads a responsive carousel of similar titles. The car
 
 Choosing your streaming services in Settings is optional. Enabled services are prioritized and can be used as a Pick For Me or Browse filter.
 
+### Optional login
+
+Watch It remains login-free by default for trusted local networks. To require a single installation password, add this to `.env` and restart the container:
+
+```sh
+WATCH_IT_PASSWORD=use-a-long-private-password
+```
+
+The password must contain at least 12 characters. There are no usernames, external accounts, email flows, or MFA. Successful login creates a random 30-day session stored as a hash in SQLite. The browser cookie is HttpOnly and SameSite Strict, and logging out revokes the server-side session.
+
+The password stays in `.env` and is not included in profile backups. Authentication over ordinary HTTP protects the application from casual access but does not encrypt network traffic. For access outside a trusted LAN, place Watch It behind HTTPS or a private VPN. When HTTPS is in use, also configure:
+
+```sh
+WATCH_IT_SECURE_COOKIE=true
+```
+
 Stop the app with:
 
 ```sh
@@ -110,6 +126,8 @@ The data survives container rebuilds and `docker compose down`. Settings include
 5. Select **Restore backup** to safely merge it with the current profile. Use **Replace current profile** only when the backup should be authoritative.
 
 Profile backups include the library, lists and statuses, watched movies and episodes, ratings, notes, service preferences, recommendation history, and Never Suggest choices. They use stable TMDB, season, and episode identities instead of local database row numbers. Each new backup includes a SHA-256 checksum and is validated before restoration. Older version 1 JSON exports remain importable.
+
+Read-only title previews are kept as a disposable local metadata cache and are not included in profile backups. Preview records that have not been opened for 30 days and API cache entries that have not been refreshed for 30 days are removed by the daily cleanup.
 
 Every restore is transactional and creates a local pre-restore safety backup before changing data. Merge restores preserve existing watched markers and avoid duplicate titles. The local safety copies are stored under `/data/backups`, with the five most recent copies retained.
 

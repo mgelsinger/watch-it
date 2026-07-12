@@ -14,6 +14,8 @@ export const config = {
   omdbKey: process.env.OMDB_API_KEY || '',
   dataDir: process.env.DATA_DIR || path.resolve(process.cwd(), 'data'),
   webDist: process.env.WEB_DIST || '',
+  authPassword: process.env.WATCH_IT_PASSWORD || '',
+  authSecureCookie: process.env.WATCH_IT_SECURE_COOKIE === 'true',
   // Safety margin under OMDb's 1,000/day free-tier limit.
   omdbDailyBudget: Number(process.env.OMDB_DAILY_BUDGET || 900),
 };

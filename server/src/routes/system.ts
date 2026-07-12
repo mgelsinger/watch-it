@@ -151,10 +151,8 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
     const allowed = new Set([
       'region',
       'schedule_country',
-      'theme',
       'broadcast_networks',
       'pick_constraints',
-      'pick_scope_default_v2',
     ]);
     for (const [k, v] of Object.entries(body)) {
       if (allowed.has(k)) setSetting(k, v);
@@ -198,16 +196,14 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
   app.put('/api/my-services', async (req) => {
     const body = z.object({
       provider_id: z.number(),
-      provider_name: z.string(),
-      logo_path: z.string().nullish(),
       enabled: z.boolean(),
     }).parse(req.body);
     getDb()
       .prepare(`
-        INSERT INTO my_services (provider_id, provider_name, logo_path, enabled) VALUES (?, ?, ?, ?)
-        ON CONFLICT(provider_id) DO UPDATE SET enabled = excluded.enabled, provider_name = excluded.provider_name, logo_path = excluded.logo_path
+        INSERT INTO my_services (provider_id, enabled) VALUES (?, ?)
+        ON CONFLICT(provider_id) DO UPDATE SET enabled = excluded.enabled
       `)
-      .run(body.provider_id, body.provider_name, body.logo_path ?? null, body.enabled ? 1 : 0);
+      .run(body.provider_id, body.enabled ? 1 : 0);
     return { ok: true };
   });
 
@@ -229,8 +225,6 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
     return createBackup(getDb());
   };
   app.get('/api/backup/export', sendBackup);
-  // Keep the original URL working for bookmarks and older clients.
-  app.get('/api/export', sendBackup);
 
   app.post('/api/backup/inspect', async (req, reply) => {
     try {
@@ -255,18 +249,6 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
     const safety_backup = saveSafetyBackup();
     const preview = restoreBackup(getDb(), body.backup, body.mode);
     return { ok: true, mode: body.mode, preview, safety_backup };
-  });
-
-  // Older clients used this endpoint for a complete replacement.
-  app.post('/api/import', async (req, reply) => {
-    try {
-      inspectBackup(req.body);
-    } catch (err) {
-      return reply.code(400).send({ error: (err as Error).message });
-    }
-    const safety_backup = saveSafetyBackup();
-    const preview = restoreBackup(getDb(), req.body, 'replace');
-    return { ok: true, titles: preview.titles, safety_backup };
   });
 
   // ---- local image cache: /img/<size>/<file> proxies image.tmdb.org and stores on disk,

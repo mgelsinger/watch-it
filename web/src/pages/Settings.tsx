@@ -93,7 +93,7 @@ export default function Settings() {
   const toggleProvider = async (p: Provider) => {
     await api('/api/my-services', {
       method: 'PUT',
-      json: { provider_id: p.provider_id, provider_name: p.provider_name, logo_path: p.logo_path, enabled: !p.enabled },
+      json: { provider_id: p.provider_id, enabled: !p.enabled },
     });
     providers.setData(
       providers.data

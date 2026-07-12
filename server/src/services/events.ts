@@ -5,7 +5,6 @@ export type EventType =
   | 'season_premiere'
   | 'arrived_on_service'
   | 'left_service'
-  | 'now_in_theaters'
   | 'now_streaming';
 
 export function emitEvent(titleId: number, type: EventType, payload: Record<string, unknown> = {}): void {

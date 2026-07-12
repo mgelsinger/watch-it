@@ -424,6 +424,7 @@ export async function libraryGrid(f: BrowseFilters): Promise<BrowseCard[]> {
 export async function refreshBrowseCaches(): Promise<void> {
   const db = getDb();
   const cutoff = new Date(Date.now() - WEEK).toISOString();
+  db.prepare('DELETE FROM api_cache WHERE key IN (SELECT key FROM discover_queries WHERE last_used < ?)').run(cutoff);
   db.prepare('DELETE FROM discover_queries WHERE last_used < ?').run(cutoff);
 
   const genres = await getGenres();

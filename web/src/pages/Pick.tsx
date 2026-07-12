@@ -75,20 +75,7 @@ export default function Pick() {
     if (!restored) {
       void api<{ settings: Record<string, string> }>('/api/settings')
         .then((response) => {
-          const saved = normalizeSaved(response.settings.pick_constraints);
-          if (response.settings.pick_scope_default_v2 !== '1') {
-            const upgraded = { ...saved, my_services_only: false, include_rent_buy: false };
-            setConstraints(upgraded);
-            void api('/api/settings', {
-              method: 'PUT',
-              json: {
-                pick_constraints: JSON.stringify(upgraded),
-                pick_scope_default_v2: '1',
-              },
-            }).catch(() => {});
-          } else {
-            setConstraints(saved);
-          }
+          setConstraints(normalizeSaved(response.settings.pick_constraints));
         })
         .catch(() => setConstraints(DEFAULTS));
     }

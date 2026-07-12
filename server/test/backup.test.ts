@@ -23,8 +23,8 @@ function addShow(db: Database.Database, watchedAt: string | null): number {
     VALUES (1399, 'tv', 'tt0944947', 'Game of Thrones', 2011)
   `).run().lastInsertRowid);
   db.prepare(`
-    INSERT INTO user_state (title_id, status, notes, updated_at, never_suggest)
-    VALUES (?, 'watching', 'Continue later', '2026-07-01T12:00:00Z', 1)
+    INSERT INTO user_state (title_id, status, notes, updated_at)
+    VALUES (?, 'watching', 'Continue later', '2026-07-01T12:00:00Z')
   `).run(titleId);
   const seasonId = Number(db.prepare(`
     INSERT INTO seasons (title_id, season_number, name) VALUES (?, 1, 'Season 1')
@@ -38,13 +38,14 @@ function addShow(db: Database.Database, watchedAt: string | null): number {
     VALUES ('tv', 1399, '2026-07-01T12:00:00Z')
   `).run();
   db.prepare(`INSERT INTO settings (key, value) VALUES ('region', 'US')`).run();
-  db.prepare(`INSERT INTO my_services (provider_id, provider_name, enabled) VALUES (8, 'Netflix', 1)`).run();
+  db.prepare(`INSERT INTO my_services (provider_id, enabled) VALUES (8, 1)`).run();
   return titleId;
 }
 
 test('profile backup is checksummed and preserves watched progress by stable identity', () => {
   const source = database();
   addShow(source, '2026-06-30T21:00:00Z');
+  source.prepare(`INSERT INTO titles (tmdb_id, media_type, name) VALUES (603, 'movie', 'Untracked preview')`).run();
 
   const backup = createBackup(source);
   const inspected = inspectBackup(backup);
@@ -53,6 +54,7 @@ test('profile backup is checksummed and preserves watched progress by stable ide
   assert.equal(inspected.preview.shows, 1);
   assert.equal(inspected.preview.watched_episodes, 1);
   assert.equal(inspected.preview.never_suggest, 1);
+  assert.equal(backup.profile.titles.some((title) => title.record.tmdb_id === 603), false);
 
   const target = database();
   restoreBackup(target, backup, 'merge');

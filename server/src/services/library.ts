@@ -156,7 +156,7 @@ async function fetchAndStore(
   let common: {
     name: string; year: number | null; overview: string | null; poster: string | null; backdrop: string | null;
     rating: number | null; genres: string; runtime: number | null; status: string | null; imdb: string | null;
-    raw: string; providers: Record<string, tmdb.RegionOffers>;
+    providers: Record<string, tmdb.RegionOffers>;
     cast: { id: number; name: string; character?: string | null; order?: number | null; profile_path?: string | null }[];
   };
   let tvPayload: tmdb.TvDetails | null = null;
@@ -174,7 +174,6 @@ async function fetchAndStore(
       runtime: d.runtime ?? null,
       status: movieStatus(d),
       imdb: d.external_ids?.imdb_id ?? d.imdb_id ?? null,
-      raw: JSON.stringify(d),
       providers: d['watch/providers']?.results ?? {},
       cast: d.credits?.cast ?? [],
     };
@@ -193,7 +192,6 @@ async function fetchAndStore(
       runtime: d.episode_run_time[0] ?? null,
       status: d.status ?? null,
       imdb: d.external_ids?.imdb_id ?? null,
-      raw: JSON.stringify(d),
       providers: d['watch/providers']?.results ?? {},
       cast: d.credits?.cast ?? [],
     };
@@ -204,20 +202,20 @@ async function fetchAndStore(
     const res = db
       .prepare(`
         INSERT INTO titles (tmdb_id, media_type, imdb_id, name, year, overview, poster_path, backdrop_path,
-                            tmdb_rating, genres, runtime, status_upstream, added_at, metadata_refreshed_at, raw_tmdb)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            tmdb_rating, genres, runtime, status_upstream, added_at, metadata_refreshed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(tmdbId, mediaType, common.imdb, common.name, common.year, common.overview, common.poster, common.backdrop,
-        common.rating, common.genres, common.runtime, common.status, now, now, common.raw);
+        common.rating, common.genres, common.runtime, common.status, now, now);
     titleId = Number(res.lastInsertRowid);
   } else {
     titleId = existingId;
     db.prepare(`
       UPDATE titles SET imdb_id = ?, name = ?, year = ?, overview = ?, poster_path = ?, backdrop_path = ?,
-                        tmdb_rating = ?, genres = ?, runtime = ?, status_upstream = ?, metadata_refreshed_at = ?, raw_tmdb = ?
+                        tmdb_rating = ?, genres = ?, runtime = ?, status_upstream = ?, metadata_refreshed_at = ?
       WHERE id = ?
     `).run(common.imdb, common.name, common.year, common.overview, common.poster, common.backdrop,
-      common.rating, common.genres, common.runtime, common.status, now, common.raw, titleId);
+      common.rating, common.genres, common.runtime, common.status, now, titleId);
   }
 
   upsertCast(titleId, common.cast);
@@ -234,6 +232,10 @@ export async function addTitle(tmdbId: number, mediaType: MediaType, status: Use
     .prepare('SELECT id FROM titles WHERE tmdb_id = ? AND media_type = ?')
     .get(tmdbId, mediaType) as { id: number } | undefined;
   if (existing) {
+    db.prepare(`
+      UPDATE titles SET added_at = ?
+      WHERE id = ? AND NOT EXISTS (SELECT 1 FROM user_state WHERE title_id = ?)
+    `).run(nowIso(), existing.id, existing.id);
     db.prepare('INSERT OR IGNORE INTO user_state (title_id, status, updated_at) VALUES (?, ?, ?)')
       .run(existing.id, status, nowIso());
     return existing.id;
@@ -251,7 +253,13 @@ export async function ensureTitlePreview(tmdbId: number, mediaType: MediaType): 
   const db = getDb();
   const existing = db.prepare('SELECT id FROM titles WHERE tmdb_id = ? AND media_type = ?')
     .get(tmdbId, mediaType) as { id: number } | undefined;
-  if (existing) return existing.id;
+  if (existing) {
+    db.prepare(`
+      UPDATE titles SET added_at = ?
+      WHERE id = ? AND NOT EXISTS (SELECT 1 FROM user_state WHERE title_id = ?)
+    `).run(nowIso(), existing.id, existing.id);
+    return existing.id;
+  }
 
   const titleId = await fetchAndStore(tmdbId, mediaType, null, { initialSync: true });
   await refreshRatings(titleId);

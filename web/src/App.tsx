@@ -12,6 +12,7 @@ import Schedule from './pages/Schedule';
 import History from './pages/History';
 import Events from './pages/Events';
 import Settings from './pages/Settings';
+import { useAuth } from './components/AuthGate';
 
 function useTheme(): [string, () => void] {
   const [theme, setTheme] = useState(() => document.documentElement.dataset.theme ?? 'dark');
@@ -20,12 +21,12 @@ function useTheme(): [string, () => void] {
     try {
       localStorage.setItem('watch-it-theme', theme);
     } catch { /* private mode */ }
-    void api('/api/settings', { method: 'PUT', json: { theme } }).catch(() => {});
   }, [theme]);
   return [theme, () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))];
 }
 
 export default function App() {
+  const auth = useAuth();
   const navigate = useNavigate();
   const [q, setQ] = useState('');
   const [unseen, setUnseen] = useState(0);
@@ -109,6 +110,7 @@ export default function App() {
           {theme === 'dark' ? '☀️' : '🌙'}
         </button>
         <NavLink to="/settings" className="iconbtn" title="Settings">⚙️</NavLink>
+        {auth.enabled && <button className="iconbtn" onClick={() => void auth.logout()} title="Log out">Log out</button>}
       </header>
 
       <main>

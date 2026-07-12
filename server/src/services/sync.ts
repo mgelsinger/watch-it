@@ -8,6 +8,7 @@ import { refreshTitle, refreshProviders, refreshRatings, emitTonightEvents } fro
 import { enabledServiceIds } from './availability.js';
 import { ensureReleaseDates } from './releaseDates.js';
 import { refreshBrowseCaches } from './browse.js';
+import { pruneDisposableData } from './cleanup.js';
 
 // ---- in-memory progress, exposed at /api/sync/status ----
 
@@ -179,21 +180,28 @@ export async function runHourly(): Promise<void> {
 
 /** Daily (~4am): metadata for non-ended titles, providers for everything tracked, discovery rows. */
 export async function runDaily(): Promise<void> {
-  if (!tmdb.tmdbConfigured()) return;
-  await scoped('tmdb', 'daily:metadata', async () => {
-    const ids = trackedTitleIds(
-      "us.status NOT IN ('dropped') AND (t.status_upstream IS NULL OR t.status_upstream NOT IN ('Ended','Canceled'))",
-    );
-    await eachTitle(ids, refreshTitle);
-  });
-  await scoped('tmdb', 'daily:providers', async () => {
-    // Ended/canceled titles still gain and lose providers; sweep everything.
-    const ids = trackedTitleIds("us.status IN ('dropped','watched') OR t.status_upstream IN ('Ended','Canceled')");
-    await eachTitle(ids, refreshProviders);
-  });
-  await scoped('tmdb', 'daily:discovery-lists', () => refreshDiscoveryLists(true));
-  await scoped('tmdb', 'daily:browse-caches', () => refreshBrowseCaches());
+  if (tmdb.tmdbConfigured()) {
+    await scoped('tmdb', 'daily:metadata', async () => {
+      const ids = trackedTitleIds(
+        "us.status NOT IN ('dropped') AND (t.status_upstream IS NULL OR t.status_upstream NOT IN ('Ended','Canceled'))",
+      );
+      await eachTitle(ids, refreshTitle);
+    });
+    await scoped('tmdb', 'daily:providers', async () => {
+      // Ended/canceled titles still gain and lose providers; sweep everything.
+      const ids = trackedTitleIds("us.status IN ('dropped','watched') OR t.status_upstream IN ('Ended','Canceled')");
+      await eachTitle(ids, refreshProviders);
+    });
+    await scoped('tmdb', 'daily:discovery-lists', () => refreshDiscoveryLists(true));
+    await scoped('tmdb', 'daily:browse-caches', () => refreshBrowseCaches());
+  }
   await scoped('app', 'daily:events', async () => emitTonightEvents());
+  await scoped('app', 'daily:cleanup', async () => {
+    const removed = pruneDisposableData();
+    if (removed.preview_titles || removed.api_cache_entries) {
+      console.log(`[cleanup] removed ${removed.preview_titles} preview titles and ${removed.api_cache_entries} cache entries`);
+    }
+  });
 }
 
 /** Weekly: OMDb ratings (oldest first, quota-aware) + metadata for ended titles. */

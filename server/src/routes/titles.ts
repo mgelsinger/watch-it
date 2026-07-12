@@ -105,12 +105,6 @@ export async function titleRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.delete<{ Params: { id: string } }>('/api/titles/:id', async (req, reply) => {
-    const res = getDb().prepare('DELETE FROM titles WHERE id = ?').run(Number(req.params.id));
-    if (res.changes === 0) return reply.code(404).send({ error: 'title not found' });
-    return { ok: true };
-  });
-
   app.post<{ Params: { id: string } }>('/api/titles/:id/refresh', async (req, reply) => {
     const id = Number(req.params.id);
     await refreshOneTitle(id);
@@ -147,10 +141,6 @@ export async function titleRoutes(app: FastifyInstance): Promise<void> {
     if (body.notes !== undefined) {
       sets.push('notes = ?');
       vals.push(body.notes);
-    }
-    if (body.never_suggest !== undefined) {
-      sets.push('never_suggest = ?');
-      vals.push(body.never_suggest ? 1 : 0);
     }
     if (body.watched !== undefined) {
       sets.push('watched_at = ?');

@@ -243,16 +243,16 @@ function attachLibraryState(candidates: DiscoveryCandidate[], constraints: PickC
     if (subset.length === 0) continue;
     const ids = subset.map((candidate) => candidate.tmdb_id);
     const rows = db().prepare(`
-      SELECT t.id, t.tmdb_id, us.status, us.never_suggest
+      SELECT t.id, t.tmdb_id, us.status
       FROM titles t
       LEFT JOIN user_state us ON us.title_id = t.id
       WHERE t.media_type = ? AND t.tmdb_id IN (${ids.map(() => '?').join(',')})
-    `).all(mediaType, ...ids) as { id: number; tmdb_id: number; status: string | null; never_suggest: number | null }[];
+    `).all(mediaType, ...ids) as { id: number; tmdb_id: number; status: string | null }[];
     const state = new Map(rows.map((row) => [row.tmdb_id, row]));
     for (const candidate of subset) {
       const stored = state.get(candidate.tmdb_id);
       const tracked = stored?.status ? stored : undefined;
-      if (suppressed.has(candidate.key) || tracked?.never_suggest === 1) continue;
+      if (suppressed.has(candidate.key)) continue;
       if (shouldExcludeLibraryTitle(tracked, constraints.exclude_library_titles)) continue;
       candidate.library_id = tracked?.id ?? null;
       result.push(candidate);
@@ -444,8 +444,8 @@ export function logSuggestion(
   constraints: unknown,
 ): void {
   db().prepare(`
-    INSERT INTO suggestion_log (title_id, tmdb_id, media_type, episode_id, action, constraints, created_at)
-    VALUES (?, ?, ?, NULL, ?, ?, ?)
+    INSERT INTO suggestion_log (title_id, tmdb_id, media_type, action, constraints, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
   `).run(titleId, tmdbId, mediaType, action, JSON.stringify(constraints ?? {}), nowIso());
 }
 
@@ -456,8 +456,4 @@ export function setSuggestionSuppressed(mediaType: 'movie' | 'tv', tmdbId: numbe
   } else {
     db().prepare('DELETE FROM suggestion_suppressions WHERE media_type = ? AND tmdb_id = ?').run(mediaType, tmdbId);
   }
-  db().prepare(`
-    UPDATE user_state SET never_suggest = ?, updated_at = ?
-    WHERE title_id IN (SELECT id FROM titles WHERE media_type = ? AND tmdb_id = ?)
-  `).run(suppressed ? 1 : 0, nowIso(), mediaType, tmdbId);
 }

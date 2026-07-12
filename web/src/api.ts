@@ -22,6 +22,7 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
     /* non-JSON error body */
   }
   if (!res.ok) {
+    if (res.status === 401) window.dispatchEvent(new Event('watch-it-auth-required'));
     const msg = (data as { error?: string })?.error ?? `${res.status} ${res.statusText}`;
     throw new ApiError(msg, res.status);
   }

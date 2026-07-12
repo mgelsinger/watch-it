@@ -7,7 +7,6 @@ const LABEL: Record<string, string> = {
   season_premiere: 'Season premiere',
   arrived_on_service: 'Arrived on your service',
   left_service: 'Left your service',
-  now_in_theaters: 'Now in theaters',
   now_streaming: 'Now streaming',
 };
 
@@ -16,7 +15,6 @@ const ICON: Record<string, string> = {
   season_premiere: '🎉',
   arrived_on_service: '📥',
   left_service: '📤',
-  now_in_theaters: '🎬',
   now_streaming: '🏠',
 };
 
@@ -34,8 +32,6 @@ function describe(ev: EventRow): string {
       return `${name} arrived on ${p.provider_name}`;
     case 'left_service':
       return `${name} left ${p.provider_name}`;
-    case 'now_in_theaters':
-      return `${name} is now in theaters`;
     case 'now_streaming':
       return `${name} can now be watched at home (${p.provider_name ?? 'streaming'})`;
     default:

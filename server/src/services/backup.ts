@@ -20,7 +20,6 @@ interface ProfileTitle {
 interface ProfileSuggestion {
   record: Row;
   title_identity?: { tmdb_id: number; media_type: 'movie' | 'tv' };
-  episode_identity?: { tmdb_id: number; media_type: 'movie' | 'tv'; season_number: number; episode_number: number };
 }
 
 export interface BackupProfile {
@@ -121,9 +120,6 @@ function calculateCounts(profile: BackupProfile): BackupCounts {
     if (title.state?.status === 'saved') savedForLater += 1;
     if (title.state?.status === 'wishlist') watchlist += 1;
     if (title.state?.status === 'watching') watching += 1;
-    if (title.state?.never_suggest === 1) {
-      neverSuggestIdentities.add(`${String(title.record.media_type)}:${String(title.record.tmdb_id)}`);
-    }
     for (const season of title.seasons) {
       watchedEpisodes += season.episodes.filter((episode) => Boolean(episode.watched_at)).length;
     }
@@ -143,20 +139,13 @@ function calculateCounts(profile: BackupProfile): BackupCounts {
 }
 
 export function buildBackupProfile(db: DB): BackupProfile {
-  const titleRows = rows(db, 'SELECT * FROM titles ORDER BY id');
-  const titleById = new Map<number, Row>();
-  for (const title of titleRows) {
-    const id = integer(title.id);
-    if (id !== null) titleById.set(id, title);
-  }
+  const titleRows = rows(db, `
+    SELECT t.* FROM titles t
+    JOIN user_state us ON us.title_id = t.id
+    ORDER BY t.id
+  `);
 
   const seasonRows = rows(db, 'SELECT * FROM seasons ORDER BY title_id, season_number');
-  const seasonById = new Map<number, Row>();
-  for (const season of seasonRows) {
-    const id = integer(season.id);
-    if (id !== null) seasonById.set(id, season);
-  }
-
   const episodes = rows(db, 'SELECT * FROM episodes ORDER BY season_id, episode_number');
   const states = new Map(rows(db, 'SELECT * FROM user_state').map((row) => [integer(row.title_id), row]));
   const cast = rows(db, 'SELECT * FROM cast_members ORDER BY title_id, ord');
@@ -185,41 +174,32 @@ export function buildBackupProfile(db: DB): BackupProfile {
   });
 
   const suggestionLog = rows(db, `
-    SELECT sl.*, t.tmdb_id AS library_tmdb_id, t.media_type AS library_media_type,
-           st.season_number, ep.episode_number
+    SELECT sl.*, t.tmdb_id AS library_tmdb_id, t.media_type AS library_media_type
     FROM suggestion_log sl
     LEFT JOIN titles t ON t.id = sl.title_id
-    LEFT JOIN episodes ep ON ep.id = sl.episode_id
-    LEFT JOIN seasons st ON st.id = ep.season_id
     ORDER BY sl.id
   `).map((row): ProfileSuggestion => {
     const libraryTmdbId = integer(row.library_tmdb_id);
     const libraryMediaType = mediaType(row.library_media_type);
-    const seasonNumber = integer(row.season_number);
-    const episodeNumber = integer(row.episode_number);
     const record = without(
       row,
-      'id', 'title_id', 'episode_id', 'library_tmdb_id', 'library_media_type', 'season_number', 'episode_number',
+      'id', 'title_id', 'library_tmdb_id', 'library_media_type',
     );
     const suggestion: ProfileSuggestion = { record };
     if (libraryTmdbId !== null && libraryMediaType) {
       suggestion.title_identity = { tmdb_id: libraryTmdbId, media_type: libraryMediaType };
-      if (seasonNumber !== null && episodeNumber !== null) {
-        suggestion.episode_identity = {
-          tmdb_id: libraryTmdbId,
-          media_type: libraryMediaType,
-          season_number: seasonNumber,
-          episode_number: episodeNumber,
-        };
-      }
     }
     return suggestion;
   });
 
   return {
     titles,
-    my_services: rows(db, 'SELECT * FROM my_services ORDER BY provider_id'),
-    settings: rows(db, `SELECT * FROM settings WHERE key NOT IN ('omdb_used_date', 'omdb_used_count') ORDER BY key`),
+    my_services: rows(db, 'SELECT provider_id, enabled FROM my_services ORDER BY provider_id'),
+    settings: rows(db, `
+      SELECT * FROM settings
+      WHERE key NOT IN ('omdb_used_date', 'omdb_used_count', 'theme', 'pick_scope_default_v2')
+      ORDER BY key
+    `),
     suggestion_log: suggestionLog,
     suggestion_suppressions: rows(db, 'SELECT * FROM suggestion_suppressions ORDER BY media_type, tmdb_id'),
     release_dates: rows(db, 'SELECT * FROM release_dates ORDER BY tmdb_id, region, type'),
@@ -254,14 +234,13 @@ function legacyToProfile(body: Row): BackupProfile {
   const availabilityRows = asRows(body.availability);
   const eventRows = asRows(body.events);
   const titleById = new Map(titleRows.map((row) => [integer(row.id), row]));
-  const seasonById = new Map(seasonRows.map((row) => [integer(row.id), row]));
 
   const titles = titleRows.map((title): ProfileTitle => {
     const titleId = integer(title.id);
     return {
-      record: without(title, 'id'),
+      record: without(title, 'id', 'raw_tmdb'),
       state: stateRows.find((row) => integer(row.title_id) === titleId)
-        ? without(stateRows.find((row) => integer(row.title_id) === titleId) as Row, 'title_id')
+        ? without(stateRows.find((row) => integer(row.title_id) === titleId) as Row, 'title_id', 'never_suggest')
         : null,
       seasons: seasonRows.filter((row) => integer(row.title_id) === titleId).map((season) => ({
         record: without(season, 'id', 'title_id'),
@@ -277,26 +256,21 @@ function legacyToProfile(body: Row): BackupProfile {
 
   const suggestionLog = asRows(body.suggestion_log).map((row): ProfileSuggestion => {
     const title = titleById.get(integer(row.title_id));
-    const episode = episodeRows.find((item) => integer(item.id) === integer(row.episode_id));
-    const season = episode ? seasonById.get(integer(episode.season_id)) : undefined;
     const tmdbId = title ? integer(title.tmdb_id) : null;
     const type = title ? mediaType(title.media_type) : null;
     const suggestion: ProfileSuggestion = { record: without(row, 'id', 'title_id', 'episode_id') };
     if (tmdbId !== null && type) {
       suggestion.title_identity = { tmdb_id: tmdbId, media_type: type };
-      const seasonNumber = season ? integer(season.season_number) : null;
-      const episodeNumber = episode ? integer(episode.episode_number) : null;
-      if (seasonNumber !== null && episodeNumber !== null) {
-        suggestion.episode_identity = { tmdb_id: tmdbId, media_type: type, season_number: seasonNumber, episode_number: episodeNumber };
-      }
     }
     return suggestion;
   });
 
   return {
-    titles,
-    my_services: asRows(body.my_services).map((row) => without(row)),
-    settings: asRows(body.settings).filter((row) => row.key !== 'omdb_used_date' && row.key !== 'omdb_used_count').map((row) => without(row)),
+    titles: titles.filter((title) => title.state !== null),
+    my_services: asRows(body.my_services).map((row) => without(row, 'provider_name', 'logo_path')),
+    settings: asRows(body.settings)
+      .filter((row) => !['omdb_used_date', 'omdb_used_count', 'theme', 'pick_scope_default_v2'].includes(String(row.key)))
+      .map((row) => without(row)),
     suggestion_log: suggestionLog,
     suggestion_suppressions: asRows(body.suggestion_suppressions).map((row) => without(row)),
     release_dates: asRows(body.release_dates).map((row) => without(row)),
@@ -327,6 +301,44 @@ function validateProfile(profile: unknown): asserts profile is BackupProfile {
   }
 }
 
+function compactProfile(profile: BackupProfile): BackupProfile {
+  const suppressions = new Map(
+    profile.suggestion_suppressions.map((row) => [`${String(row.media_type)}:${String(row.tmdb_id)}`, without(row)]),
+  );
+  for (const title of profile.titles) {
+    if (title.state?.never_suggest === 1) {
+      const key = `${String(title.record.media_type)}:${String(title.record.tmdb_id)}`;
+      if (!suppressions.has(key)) {
+        suppressions.set(key, {
+          media_type: title.record.media_type,
+          tmdb_id: title.record.tmdb_id,
+          created_at: '1970-01-01T00:00:00.000Z',
+        });
+      }
+    }
+  }
+
+  return {
+    titles: profile.titles
+      .filter((title) => title.state !== null)
+      .map((title) => ({
+        ...title,
+        record: without(title.record, 'raw_tmdb'),
+        state: title.state ? without(title.state, 'never_suggest') : null,
+        events: title.events.filter((event) => event.type !== 'now_in_theaters'),
+      })),
+    my_services: profile.my_services.map((row) => without(row, 'provider_name', 'logo_path')),
+    settings: profile.settings.filter((row) => !['theme', 'pick_scope_default_v2'].includes(String(row.key))),
+    suggestion_log: profile.suggestion_log.map((suggestion) => ({
+      record: without(suggestion.record, 'episode_id'),
+      ...(suggestion.title_identity ? { title_identity: suggestion.title_identity } : {}),
+    })),
+    suggestion_suppressions: [...suppressions.values()],
+    release_dates: profile.release_dates.map((row) => without(row)),
+    unlinked_events: profile.unlinked_events.filter((event) => event.type !== 'now_in_theaters'),
+  };
+}
+
 export function inspectBackup(input: unknown): { document: BackupDocument; preview: BackupPreview } {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('not a Watch It backup file');
   const body = input as Row;
@@ -341,10 +353,11 @@ export function inspectBackup(input: unknown): { document: BackupDocument; previ
     const actual = checksum(body.profile);
     if (typeof expected !== 'string' || expected !== actual) throw new Error('backup checksum does not match; the file may be damaged');
     checksumVerified = true;
-    document = body as unknown as BackupDocument;
+    const source = body as unknown as BackupDocument;
+    document = { ...source, profile: compactProfile(source.profile) };
   } else if (body.version === 1 && Array.isArray(body.titles)) {
     legacy = true;
-    const profile = legacyToProfile(body);
+    const profile = compactProfile(legacyToProfile(body));
     validateProfile(profile);
     document = {
       app: 'watch-it',
@@ -419,12 +432,11 @@ function restoreState(db: DB, titleId: number, state: Row, mode: 'merge' | 'repl
   }
   const currentDate = typeof current.updated_at === 'string' ? current.updated_at : '';
   const incomingDate = typeof incoming.updated_at === 'string' ? incoming.updated_at : '';
-  const neverSuggest = current.never_suggest === 1 || incoming.never_suggest === 1 ? 1 : 0;
   const watchedAt = current.watched_at || incoming.watched_at || null;
   if (incomingDate >= currentDate) {
-    upsert(db, 'user_state', { ...incoming, watched_at: watchedAt, never_suggest: neverSuggest }, ['title_id']);
-  } else if (neverSuggest !== current.never_suggest || watchedAt !== current.watched_at) {
-    db.prepare('UPDATE user_state SET never_suggest = ?, watched_at = ? WHERE title_id = ?').run(neverSuggest, watchedAt, titleId);
+    upsert(db, 'user_state', { ...incoming, watched_at: watchedAt }, ['title_id']);
+  } else if (watchedAt !== current.watched_at) {
+    db.prepare('UPDATE user_state SET watched_at = ? WHERE title_id = ?').run(watchedAt, titleId);
   }
 }
 
@@ -479,21 +491,12 @@ export function restoreBackup(db: DB, input: unknown, mode: 'merge' | 'replace')
     for (const suggestion of profile.suggestion_log) {
       const record = { ...suggestion.record };
       const identity = suggestion.title_identity;
-      const episodeIdentity = suggestion.episode_identity;
       const titleId = identity ? findTitleId(db, identity.tmdb_id, identity.media_type) : null;
-      let episodeId: number | null = null;
-      if (episodeIdentity && titleId !== null) {
-        const episode = db.prepare(`
-          SELECT ep.id FROM episodes ep JOIN seasons s ON s.id = ep.season_id
-          WHERE s.title_id = ? AND s.season_number = ? AND ep.episode_number = ?
-        `).get(titleId, episodeIdentity.season_number, episodeIdentity.episode_number) as { id: number } | undefined;
-        episodeId = episode?.id ?? null;
-      }
       const exists = mode === 'merge' && db.prepare(`
         SELECT 1 FROM suggestion_log
         WHERE tmdb_id = ? AND media_type = ? AND action = ? AND constraints = ? AND created_at = ?
       `).get(record.tmdb_id, record.media_type, record.action, record.constraints, record.created_at);
-      if (!exists) insert(db, 'suggestion_log', { ...record, title_id: titleId, episode_id: episodeId });
+      if (!exists) insert(db, 'suggestion_log', { ...record, title_id: titleId });
     }
 
     for (const event of profile.unlinked_events) {

@@ -11,6 +11,7 @@ import { browseRoutes } from './routes/browse.js';
 import { pickRoutes } from './routes/pick.js';
 import { startCron } from './services/sync.js';
 import { ZodError } from 'zod';
+import { registerAuth } from './auth.js';
 
 async function main(): Promise<void> {
   migrate();
@@ -27,6 +28,8 @@ async function main(): Promise<void> {
     app.log.error(err);
     return reply.code(err.statusCode && err.statusCode >= 400 ? err.statusCode : 500).send({ error: err.message });
   });
+
+  registerAuth(app);
 
   await app.register(titleRoutes);
   await app.register(systemRoutes);
