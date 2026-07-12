@@ -101,7 +101,21 @@ docker compose down
 
 Application data lives in the named Docker volume `watch-it-data`. The SQLite database is stored at `/data/watch-it.db` inside the container.
 
-The data survives container rebuilds and `docker compose down`. A complete backup can be made by copying the SQLite database while the server is stopped. JSON export and import are also available from Settings.
+The data survives container rebuilds and `docker compose down`. Settings includes a portable profile backup workflow designed for moving between Windows, Linux, and fresh Docker installations:
+
+1. Open Settings and select **Choose location and save backup**.
+2. Save the `.watchit.json` file to a NAS, external disk, or another protected location.
+3. On any Watch It installation, select **Choose backup file**.
+4. Review the title and watched-history counts shown before restoring.
+5. Select **Restore backup** to safely merge it with the current profile. Use **Replace current profile** only when the backup should be authoritative.
+
+Profile backups include the library, lists and statuses, watched movies and episodes, ratings, notes, service preferences, recommendation history, and Never Suggest choices. They use stable TMDB, season, and episode identities instead of local database row numbers. Each new backup includes a SHA-256 checksum and is validated before restoration. Older version 1 JSON exports remain importable.
+
+Every restore is transactional and creates a local pre-restore safety backup before changing data. Merge restores preserve existing watched markers and avoid duplicate titles. The local safety copies are stored under `/data/backups`, with the five most recent copies retained.
+
+The browser will open a save-location chooser when that capability is available. Otherwise it downloads the file using the browser's configured download behavior. Enable the browser setting that asks where to save each file if you always want to select a NAS location.
+
+For additional protection, the SQLite database can still be copied while the server is stopped. Keep multiple dated backups and occasionally test that a profile backup passes the import preview rather than relying on a single file.
 
 ## Development
 

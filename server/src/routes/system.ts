@@ -10,12 +10,21 @@ import * as omdb from '../sources/omdb.js';
 import * as tvmaze from '../sources/tvmaze.js';
 import { syncState, kickGlobalRefresh, refreshTvmazeSchedule, refreshDiscoveryLists, discoveryCacheKeys } from '../services/sync.js';
 import * as q from '../services/queries.js';
+import { createBackup, inspectBackup, restoreBackup } from '../services/backup.js';
 
-const EXPORT_TABLES = [
-  'titles', 'user_state', 'seasons', 'episodes', 'cast_members',
-  'availability', 'my_services', 'events', 'settings',
-  'suggestion_log', 'suggestion_suppressions',
-] as const;
+function saveSafetyBackup(): string {
+  const dir = path.join(config.dataDir, 'backups');
+  fs.mkdirSync(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `before-restore-${stamp}.watchit.json`;
+  fs.writeFileSync(path.join(dir, filename), JSON.stringify(createBackup(getDb()), null, 2));
+  const existing = fs.readdirSync(dir)
+    .filter((name) => name.startsWith('before-restore-') && name.endsWith('.watchit.json'))
+    .sort()
+    .reverse();
+  for (const old of existing.slice(5)) fs.rmSync(path.join(dir, old));
+  return filename;
+}
 
 export async function systemRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/health', async () => {
@@ -213,35 +222,51 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
     return { state: syncState, log };
   });
 
-  // ---- export / import ----
-  app.get('/api/export', async (_req, reply) => {
-    const db = getDb();
-    const dump: Record<string, unknown> = { app: 'watch-it', version: 1, exported_at: new Date().toISOString() };
-    for (const table of EXPORT_TABLES) dump[table] = db.prepare(`SELECT * FROM ${table}`).all();
-    reply.header('content-disposition', `attachment; filename="watch-it-export-${localToday()}.json"`);
-    return dump;
+  // ---- portable profile backup / restore ----
+  const sendBackup = async (_req: unknown, reply: { header: (name: string, value: string) => unknown }) => {
+    reply.header('content-type', 'application/json; charset=utf-8');
+    reply.header('content-disposition', `attachment; filename="watch-it-profile-${localToday()}.watchit.json"`);
+    return createBackup(getDb());
+  };
+  app.get('/api/backup/export', sendBackup);
+  // Keep the original URL working for bookmarks and older clients.
+  app.get('/api/export', sendBackup);
+
+  app.post('/api/backup/inspect', async (req, reply) => {
+    try {
+      const { preview } = inspectBackup(req.body);
+      return { ok: true, preview };
+    } catch (err) {
+      return reply.code(400).send({ error: (err as Error).message });
+    }
   });
 
-  app.post('/api/import', async (req, reply) => {
-    const body = req.body as Record<string, unknown>;
-    if (!body || body.app !== 'watch-it' || !Array.isArray(body.titles)) {
-      return reply.code(400).send({ error: 'not a watch-it export file' });
+  app.post('/api/backup/restore', async (req, reply) => {
+    const body = req.body as { backup?: unknown; mode?: unknown } | null;
+    if (!body || (body.mode !== 'merge' && body.mode !== 'replace')) {
+      return reply.code(400).send({ error: 'choose merge or replace before restoring' });
     }
-    const db = getDb();
-    const run = db.transaction(() => {
-      for (const table of [...EXPORT_TABLES].reverse()) db.prepare(`DELETE FROM ${table}`).run();
-      for (const table of EXPORT_TABLES) {
-        const rows = body[table];
-        if (!Array.isArray(rows)) continue;
-        for (const row of rows as Record<string, unknown>[]) {
-          const cols = Object.keys(row);
-          db.prepare(`INSERT INTO ${table} (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`)
-            .run(...cols.map((c) => row[c]));
-        }
-      }
-    });
-    run();
-    return { ok: true, titles: (body.titles as unknown[]).length };
+    // Validate before taking a safety copy or changing the current profile.
+    try {
+      inspectBackup(body.backup);
+    } catch (err) {
+      return reply.code(400).send({ error: (err as Error).message });
+    }
+    const safety_backup = saveSafetyBackup();
+    const preview = restoreBackup(getDb(), body.backup, body.mode);
+    return { ok: true, mode: body.mode, preview, safety_backup };
+  });
+
+  // Older clients used this endpoint for a complete replacement.
+  app.post('/api/import', async (req, reply) => {
+    try {
+      inspectBackup(req.body);
+    } catch (err) {
+      return reply.code(400).send({ error: (err as Error).message });
+    }
+    const safety_backup = saveSafetyBackup();
+    const preview = restoreBackup(getDb(), req.body, 'replace');
+    return { ok: true, titles: preview.titles, safety_backup };
   });
 
   // ---- local image cache: /img/<size>/<file> proxies image.tmdb.org and stores on disk,
