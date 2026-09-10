@@ -818,6 +818,47 @@ h2.row-title {
   padding: 3px 11px;
   font-size: 12.5px;
 }
+.version-preferences { width: 100%; }
+.service-exclusions { width: 100%; }
+.service-exclusions > summary {
+  cursor: pointer;
+  width: fit-content;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+}
+.service-exclusions[open] > summary { border-color: var(--accent); }
+.service-exclusions-panel {
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.service-exclusions-panel > p { flex-basis: 100%; margin: 0; }
+.service-exclusions-panel > input { width: min(360px, 100%); }
+.service-exclusions-list {
+  width: 100%;
+  max-height: 240px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
+  gap: 4px 12px;
+}
+.service-exclusions-list label { display: flex; gap: 8px; align-items: center; padding: 7px 0; cursor: pointer; }
+.service-exclusions-list input { flex-shrink: 0; }
+.version-preferences label { display: block; cursor: pointer; }
+.version-preferences p { margin: 5px 0 14px; line-height: 1.45; }
+.version-preferences p:last-child { margin-bottom: 0; }
+.version-note { margin: 8px 0; font-size: 13px; line-height: 1.4; }
+.version-note.compact { font-size: 11px; color: var(--muted); margin: 4px 0; }
+.version-note a { position: relative; z-index: 3; text-decoration: underline; margin-left: 4px; }
+.version-note p { margin: 4px 0; }
 .genre-panel button.chip.on {
   background: var(--accent);
   color: var(--accent-contrast);
@@ -1163,4 +1204,19 @@ h2.row-title {
   to {
     transform: rotate(360deg);
   }
+}
+:focus-visible { outline: 2px solid #57c4d8; outline-offset: 3px; }
+.about-page { max-width: 760px; margin: 0 auto; }
+.about-page p { line-height: 1.65; }
+
+@media (max-width: 980px) {
+  .topbar { position: static; flex-wrap: wrap; gap: 8px; padding: 10px 14px; }
+  .topbar nav { order: 2; width: 100%; flex-wrap: wrap; }
+  .topbar .search { min-width: 140px; }
+  .topbar .spacer { display: none; }
+  .kv { flex-wrap: wrap; gap: 8px; }
+  .kv > * { max-width: 100%; min-width: 0; }
+  .kv > span { flex-wrap: wrap; }
+  .genre-dd[open] { width: 100%; }
+  .genre-panel { position: static; margin-top: 6px; width: 100%; }
 }

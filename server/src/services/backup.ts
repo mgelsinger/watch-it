@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { DB } from '../db.js';
+import { APP_VERSION } from '../version.js';
+import { REGIONS } from '../regions.js';
 
 type Row = Record<string, unknown>;
 
@@ -62,7 +64,6 @@ export interface BackupPreview extends BackupCounts {
   legacy: boolean;
 }
 
-const APP_VERSION = '1.0.0';
 const PROFILE_ARRAYS = [
   'titles',
   'my_services',
@@ -197,7 +198,7 @@ export function buildBackupProfile(db: DB): BackupProfile {
     my_services: rows(db, 'SELECT provider_id, enabled FROM my_services ORDER BY provider_id'),
     settings: rows(db, `
       SELECT * FROM settings
-      WHERE key NOT IN ('omdb_used_date', 'omdb_used_count', 'theme', 'pick_scope_default_v2')
+      WHERE key IN ('region', 'schedule_country', 'broadcast_networks', 'pick_constraints')
       ORDER BY key
     `),
     suggestion_log: suggestionLog,
@@ -284,6 +285,11 @@ function validateProfile(profile: unknown): asserts profile is BackupProfile {
   for (const key of PROFILE_ARRAYS) {
     if (!Array.isArray(candidate[key])) throw new Error(`backup section ${key} is missing`);
   }
+  for (const setting of candidate.settings as Row[]) {
+    if (['region', 'schedule_country'].includes(String(setting.key)) && !(REGIONS as readonly string[]).includes(String(setting.value))) {
+      throw new Error(`Backup contains an unsupported ${String(setting.key)}. Choose a supported region before exporting.`);
+    }
+  }
   for (const item of candidate.titles as unknown[]) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('backup contains an invalid title');
     const title = item as unknown as ProfileTitle;
@@ -328,7 +334,7 @@ function compactProfile(profile: BackupProfile): BackupProfile {
         events: title.events.filter((event) => event.type !== 'now_in_theaters'),
       })),
     my_services: profile.my_services.map((row) => without(row, 'provider_name', 'logo_path')),
-    settings: profile.settings.filter((row) => !['theme', 'pick_scope_default_v2'].includes(String(row.key))),
+    settings: profile.settings.filter((row) => ['region', 'schedule_country', 'broadcast_networks', 'pick_constraints'].includes(String(row.key))),
     suggestion_log: profile.suggestion_log.map((suggestion) => ({
       record: without(suggestion.record, 'episode_id'),
       ...(suggestion.title_identity ? { title_identity: suggestion.title_identity } : {}),

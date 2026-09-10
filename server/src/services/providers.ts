@@ -1,6 +1,8 @@
 import { cacheGet, cacheSet, getSetting } from '../db.js';
 import * as tmdb from '../sources/tmdb.js';
 import { enabledServiceIds } from './availability.js';
+import { singleFlight } from '../singleFlight.js';
+import { nowIso } from '../config.js';
 
 const DAY = 86400_000;
 const STREAM_TYPES = new Set<WatchOffer['offer_type']>(['flatrate', 'free', 'ads']);
@@ -19,13 +21,56 @@ export interface WatchOffer {
   offer_type: 'flatrate' | 'rent' | 'buy' | 'free' | 'ads';
 }
 
+export interface AvailabilityCheck {
+  status: 'fresh' | 'stale' | 'unavailable';
+  region: string;
+  checked_at: string | null;
+}
+
+export function watchUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname === 'www.themoviedb.org' && !url.port && !url.username && !url.password
+      && /^\/(movie|tv)\/\d+(?:-[^/]+)?\/watch$/.test(url.pathname) ? url.href : null;
+  } catch { return null; }
+}
+
 export interface OfferFilter {
   myServicesOnly: boolean;
   includeRentBuy: boolean;
+  excludedProviderIds?: number[];
+}
+
+/** Share the region's provider catalog between search filters and Settings. */
+export async function regionalProviders(): Promise<Awaited<ReturnType<typeof tmdb.providerList>>> {
+  const region = getSetting('region');
+  const key = `tmdb_providers:${region}`;
+  const cached = cacheGet(key, 7 * DAY);
+  if (cached?.fresh || !tmdb.tmdbConfigured()) return (cached?.payload ?? []) as Awaited<ReturnType<typeof tmdb.providerList>>;
+  return singleFlight(key, async () => {
+    try {
+      const providers = await tmdb.providerList(region);
+      cacheSet(key, providers);
+      return providers;
+    } catch (err) {
+      if (cached) return cached.payload as Awaited<ReturnType<typeof tmdb.providerList>>;
+      throw err;
+    }
+  });
+}
+
+/** null leaves services unrestricted; [] means none remain. Use an OR of the
+ * remaining services so titles shared with an excluded service stay eligible. */
+export async function discoveryProviderIds(excluded: number[], myServicesOnly: boolean): Promise<number[] | null> {
+  if (!myServicesOnly && excluded.length === 0) return null;
+  const candidates = myServicesOnly ? [...enabledServiceIds()] : (await regionalProviders()).map((p) => p.provider_id);
+  return [...new Set(candidates)].filter((id) => !excluded.includes(id)).sort((a, b) => a - b);
 }
 
 interface CachedOffers {
   offers: WatchOffer[];
+  watch_url?: string | null;
 }
 
 function flattenOffers(region: tmdb.RegionOffers | undefined): WatchOffer[] {
@@ -47,21 +92,26 @@ function flattenOffers(region: tmdb.RegionOffers | undefined): WatchOffer[] {
 export async function getExternalOffers(
   mediaType: 'movie' | 'tv',
   tmdbId: number,
-): Promise<{ offers: WatchOffer[]; stale: boolean }> {
+): Promise<{ offers: WatchOffer[]; stale: boolean; availability_check: AvailabilityCheck; watch_url: string | null }> {
   const region = getSetting('region');
   const key = `tmdb_providers:${region}:${mediaType}:${tmdbId}`;
   const cached = cacheGet(key, DAY);
-  if (cached?.fresh) return { offers: (cached.payload as CachedOffers).offers ?? [], stale: false };
-
-  try {
-    const regions = mediaType === 'movie' ? await tmdb.movieProviders(tmdbId) : await tmdb.tvProviders(tmdbId);
-    const payload: CachedOffers = { offers: flattenOffers(regions[region]) };
-    cacheSet(key, payload);
-    return { offers: payload.offers, stale: false };
-  } catch (err) {
-    if (cached) return { offers: (cached.payload as CachedOffers).offers ?? [], stale: true };
-    throw err;
-  }
+  const result = (payload: CachedOffers, status: AvailabilityCheck['status'], checkedAt: string | null) => ({
+    offers: payload.offers ?? [], stale: status === 'stale', watch_url: watchUrl(payload.watch_url),
+    availability_check: { status, region, checked_at: checkedAt },
+  });
+  if (cached?.fresh) return result(cached.payload as CachedOffers, 'fresh', cached.fetchedAt);
+  return singleFlight(key, async () => {
+    try {
+      const regions = mediaType === 'movie' ? await tmdb.movieProviders(tmdbId) : await tmdb.tvProviders(tmdbId);
+      const payload: CachedOffers = { offers: flattenOffers(regions[region]), watch_url: watchUrl(regions[region]?.link) };
+      cacheSet(key, payload);
+      return result(payload, 'fresh', nowIso());
+    } catch {
+      if (cached) return result(cached.payload as CachedOffers, 'stale', cached.fetchedAt);
+      return result({ offers: [] }, 'unavailable', null);
+    }
+  });
 }
 
 export function filterAndSortOffers(
@@ -70,6 +120,7 @@ export function filterAndSortOffers(
   enabled: Set<number> = enabledServiceIds(),
 ): WatchOffer[] {
   const filtered = offers.filter((o) => {
+    if (filter.excludedProviderIds?.includes(o.provider_id)) return false;
     if (filter.myServicesOnly && !enabled.has(o.provider_id)) return false;
     return filter.includeRentBuy || STREAM_TYPES.has(o.offer_type);
   });
@@ -100,15 +151,18 @@ export async function enrichCardsWithOffers<T extends { tmdb_id: number; media_t
   cards: T[],
   filter: OfferFilter,
   concurrency = 5,
-): Promise<Array<T & { offers: WatchOffer[] }>> {
-  const results = cards.map((card) => ({ ...card, offers: [] as WatchOffer[] }));
+): Promise<Array<T & { offers: WatchOffer[]; availability_check: AvailabilityCheck }>> {
+  const region = getSetting('region');
+  const results = cards.map((card) => ({ ...card, offers: [] as WatchOffer[], availability_check: { status: 'unavailable', region, checked_at: null } as AvailabilityCheck }));
   let cursor = 0;
   const workers = Array.from({ length: Math.min(concurrency, cards.length) }, async () => {
     while (cursor < cards.length) {
       const index = cursor++;
       const card = cards[index];
       try {
-        results[index].offers = await offersForTitle(card.media_type, card.tmdb_id, filter);
+        const result = await getExternalOffers(card.media_type, card.tmdb_id);
+        results[index].offers = filterAndSortOffers(result.offers, filter);
+        results[index].availability_check = result.availability_check;
       } catch {
         results[index].offers = [];
       }

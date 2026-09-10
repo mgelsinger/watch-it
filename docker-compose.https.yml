@@ -1,0 +1,34 @@
+# Optional: docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+# Set WATCH_IT_DOMAIN and a strong WATCH_IT_PASSWORD first.
+services:
+  watch-it:
+    environment:
+      WATCH_IT_PASSWORD: ${WATCH_IT_PASSWORD:?Set an installation password for HTTPS access}
+      WATCH_IT_SECURE_COOKIE: "true"
+      WATCH_IT_TRUSTED_PROXIES: "172.30.83.2"
+    networks:
+      proxy:
+        ipv4_address: 172.30.83.3
+  caddy:
+    image: caddy:2.11.2-alpine
+    restart: unless-stopped
+    environment:
+      WATCH_IT_DOMAIN: ${WATCH_IT_DOMAIN:?Set the HTTPS domain}
+    ports:
+      - "${HTTPS_BIND_ADDRESS:-127.0.0.1}:80:80"
+      - "${HTTPS_BIND_ADDRESS:-127.0.0.1}:443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      proxy:
+        ipv4_address: 172.30.83.2
+networks:
+  proxy:
+    ipam:
+      config:
+        - subnet: 172.30.83.0/24
+volumes:
+  caddy-data:
+  caddy-config:

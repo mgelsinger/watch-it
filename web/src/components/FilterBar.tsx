@@ -1,27 +1,35 @@
 import type { BrowseGenre } from '../types';
+import VersionPreferences from './VersionPreferences';
+import ServiceExclusions from './ServiceExclusions';
 
 export interface BrowseState {
   scope: 'discover' | 'library';
   type: 'movie' | 'tv' | 'both';
   genres: string[];
   watch: 'any' | 'my' | 'streaming' | 'broadcast';
+  excludedProviders: number[];
   status: '' | 'returning' | 'ended' | 'canceled';
   lib: '' | 'not_added' | 'saved' | 'wishlist' | 'watching' | 'watched' | 'dropped';
   ymin: string;
   ymax: string;
   rating: '' | '6' | '7' | '8';
   bingeable: boolean;
+  preferEnglish: boolean;
+  includeAdaptations: boolean;
   sort: '' | 'newest' | 'rating' | 'popular' | 'az' | 'added' | 'watched';
 }
 
 export const DEFAULT_STATE: BrowseState = {
   scope: 'discover', type: 'both', genres: [], watch: 'any', status: '', lib: '',
   ymin: '', ymax: '', rating: '', bingeable: false, sort: '',
+  preferEnglish: false, includeAdaptations: false,
+  excludedProviders: [],
 };
 
 export function anyFilterActive(s: BrowseState): boolean {
   return s.type !== 'both' || s.genres.length > 0 || s.watch !== 'any' || s.status !== '' ||
-    s.lib !== '' || s.ymin !== '' || s.ymax !== '' || s.rating !== '' || s.bingeable || s.sort !== '';
+    s.lib !== '' || s.ymin !== '' || s.ymax !== '' || s.rating !== '' || s.bingeable || s.sort !== '' ||
+    s.preferEnglish || s.includeAdaptations || s.excludedProviders.length > 0;
 }
 
 /**
@@ -52,15 +60,29 @@ export default function FilterBar({ state, genres, onChange }: {
         <option value="tv">TV</option>
       </select>
 
-      <details className="genre-dd">
+      <details className="genre-dd" onToggle={(event) => {
+        if (!event.currentTarget.open) return;
+        for (const details of event.currentTarget.parentElement?.querySelectorAll('details') ?? []) {
+          if (details !== event.currentTarget) details.open = false;
+        }
+      }}>
         <summary>Genres{s.genres.length > 0 ? ` (${s.genres.length})` : ''}</summary>
         <div className="genre-panel">
           {genres.map((g) => (
-            <button key={g.key} className={`chip ${s.genres.includes(g.key) ? 'on' : ''}`} onClick={() => toggleGenre(g.key)}>
+            <button key={g.key} className={`chip ${s.genres.includes(g.key) ? 'on' : ''}`} onClick={() => toggleGenre(g.key)}
+              title={g.description} aria-pressed={s.genres.includes(g.key)}>
               {g.name}
             </button>
           ))}
           {genres.length === 0 && <span className="muted">genre list unavailable</span>}
+          {genres.length > 0 && <span className="muted">Matches any selected genre. {isLib ? 'Searches your library.' : 'Searches across services; use Where to watch to narrow results.'}</span>}
+        </div>
+      </details>
+
+      <details className="genre-dd">
+        <summary>English versions{(s.preferEnglish || s.includeAdaptations) ? ' (on)' : ''}</summary>
+        <div className="genre-panel">
+          <VersionPreferences preferEnglish={s.preferEnglish} includeAdaptations={s.includeAdaptations} onChange={onChange} />
         </div>
       </details>
 
@@ -70,6 +92,8 @@ export default function FilterBar({ state, genres, onChange }: {
         <option value="streaming">Any Streaming</option>
         {!isLib && <option value="broadcast">Broadcast TV</option>}
       </select>
+
+      <ServiceExclusions excluded={s.excludedProviders} onChange={(excludedProviders) => onChange({ excludedProviders })} />
 
       <select value={s.status} onChange={(e) => onChange({ status: e.target.value as BrowseState['status'] })} aria-label="Series status">
         <option value="">Any status</option>

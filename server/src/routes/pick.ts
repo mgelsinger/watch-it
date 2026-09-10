@@ -9,8 +9,12 @@ const ConstraintsZ = z.object({
   type: z.enum(['tv', 'movie', 'either']).default('either'),
   genres: z.array(z.string()).default([]),
   my_services_only: z.boolean().default(false),
+  excluded_provider_ids: z.array(z.number().int().positive().safe()).max(500).default([])
+    .transform((ids) => [...new Set(ids)].sort((a, b) => a - b)),
   include_rent_buy: z.boolean().default(false),
   exclude_library_titles: z.boolean().default(true),
+  prefer_english: z.boolean().default(false),
+  include_adaptations: z.boolean().default(false),
 });
 
 export async function pickRoutes(app: FastifyInstance): Promise<void> {

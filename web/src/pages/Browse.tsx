@@ -17,12 +17,15 @@ function fromParams(sp: URLSearchParams): BrowseState {
     type: pick('type', ['movie', 'tv', 'both'] as const, 'both'),
     genres: (sp.get('genres') ?? '').split(',').filter(Boolean),
     watch: pick('watch', ['any', 'my', 'streaming', 'broadcast'] as const, 'any'),
+    excludedProviders: [...new Set((sp.get('exclude_providers') ?? '').split(',').map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))],
     status: pick('status', ['returning', 'ended', 'canceled'] as const, '' as const),
     lib: pick('lib', ['not_added', 'saved', 'wishlist', 'watching', 'watched', 'dropped'] as const, '' as const),
     ymin: sp.get('ymin') ?? '',
     ymax: sp.get('ymax') ?? '',
     rating: pick('rating', ['6', '7', '8'] as const, '' as const),
     bingeable: sp.get('bingeable') === '1',
+    preferEnglish: sp.get('prefer_english') === '1',
+    includeAdaptations: sp.get('include_adaptations') === '1',
     sort: pick('sort', ['newest', 'rating', 'popular', 'az', 'added', 'watched'] as const, '' as const),
   };
 }
@@ -33,12 +36,15 @@ function toParams(s: BrowseState): URLSearchParams {
   if (s.type !== 'both') sp.set('type', s.type);
   if (s.genres.length) sp.set('genres', s.genres.join(','));
   if (s.watch !== 'any') sp.set('watch', s.watch);
+  if (s.excludedProviders.length) sp.set('exclude_providers', s.excludedProviders.join(','));
   if (s.status) sp.set('status', s.status);
   if (s.lib) sp.set('lib', s.lib);
   if (s.ymin) sp.set('ymin', s.ymin);
   if (s.ymax) sp.set('ymax', s.ymax);
   if (s.rating) sp.set('rating', s.rating);
   if (s.bingeable) sp.set('bingeable', '1');
+  if (s.preferEnglish) sp.set('prefer_english', '1');
+  if (s.includeAdaptations) sp.set('include_adaptations', '1');
   if (s.sort) sp.set('sort', s.sort);
   return sp;
 }
@@ -49,12 +55,15 @@ function apiQuery(s: BrowseState): string {
   sp.set('type', s.type);
   if (s.genres.length) sp.set('genres', s.genres.join(','));
   if (s.watch !== 'any') sp.set('watch', s.watch);
+  if (s.excludedProviders.length) sp.set('exclude_providers', s.excludedProviders.join(','));
   if (s.status) sp.set('status', s.status);
   if (s.lib) sp.set('library', s.lib);
   if (s.ymin) sp.set('year_min', s.ymin);
   if (s.ymax) sp.set('year_max', s.ymax);
   if (s.rating) sp.set('rating', s.rating);
   if (s.bingeable) sp.set('bingeable', '1');
+  if (s.preferEnglish) sp.set('prefer_english', '1');
+  if (s.includeAdaptations) sp.set('include_adaptations', '1');
   sp.set('sort', s.sort || (s.scope === 'library' ? 'added' : 'newest'));
   return sp.toString();
 }
@@ -73,6 +82,8 @@ function BrowseCardView({ c, onAdd }: { c: BrowseCard; onAdd: (c: BrowseCard) =>
       typeBadge={c.media_type === 'movie' ? 'Movie' : 'TV'}
       statusBadge={c.user_status ?? undefined}
       offers={c.offers}
+      availabilityCheck={c.availability_check}
+      englishVersion={c.english_version}
       onAdd={c.library_id ? undefined : () => onAdd(c)}
     />
   );
@@ -114,7 +125,7 @@ function LazyGenreRow({ genre, onSeeAll }: { genre: BrowseGenre; onSeeAll: (key:
     return () => obs.disconnect();
   }, []);
 
-  const { data, setData } = useApi<{ items: BrowseCard[]; stale: boolean }>(
+  const { data, error, reload, setData } = useApi<{ items: BrowseCard[]; stale: boolean }>(
     visible ? `/api/browse/row?genre=${encodeURIComponent(genre.key)}` : null,
   );
   const add = useAddToWishlist((c) => data && setData({ ...data, items: patchList(data.items, c) }));
@@ -127,7 +138,7 @@ function LazyGenreRow({ genre, onSeeAll }: { genre: BrowseGenre; onSeeAll: (key:
           See all →
         </a>
       </div>
-      {!data ? (
+      {error ? <p role="alert">{error} <button onClick={reload}>Retry</button></p> : !data ? (
         <div className="row-placeholder" />
       ) : (
         <div className="poster-row">
@@ -142,51 +153,69 @@ function LazyGenreRow({ genre, onSeeAll }: { genre: BrowseGenre; onSeeAll: (key:
 
 // ---- Discover grid: infinite scroll over TMDB pages ----
 
-function DiscoverGrid({ query }: { query: string }) {
+function DiscoverGrid({ query, refresh }: { query: string; refresh: () => void }) {
   const [items, setItems] = useState<BrowseCard[]>([]);
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
-  const [loading, setLoading] = useState(false);
+  const [phase, setPhase] = useState<'idle' | 'loading' | 'error' | 'exhausted'>('idle');
+  const [manual, setManual] = useState(false);
   const [stale, setStale] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const sentinel = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setItems([]);
-    setPage(0);
-    setTotalPages(1);
-    setStale(false);
-    setError(null);
-  }, [query]);
+  const request = useRef<AbortController | null>(null);
+  const initial = useRef(false);
+  const loading = phase === 'loading';
 
   const loadNext = useCallback(async () => {
     const next = page + 1;
-    if (loading || next > totalPages) return;
-    setLoading(true);
+    if (request.current || next > totalPages) return;
+    const controller = new AbortController();
+    request.current = controller;
+    setPhase('loading');
+    setError(null);
     try {
-      const r = await api<BrowseGridPage>(`/api/browse/discover?${query}&page=${next}`);
+      const r = await api<BrowseGridPage>(`/api/browse/discover?${query}&page=${next}`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       setItems((prev) => {
         const seen = new Set(prev.map((c) => `${c.media_type}:${c.tmdb_id}`));
-        return [...prev, ...r.items.filter((c) => !seen.has(`${c.media_type}:${c.tmdb_id}`))];
+        return [...prev, ...r.items.filter((c) => {
+          const key = `${c.media_type}:${c.tmdb_id}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })];
       });
       setPage(r.page);
-      setTotalPages(r.total_pages || 1);
+      setTotalPages(r.total_pages);
       setStale((s) => s || r.stale);
-      setError(null);
+      setNotice((previous) => r.notice ?? previous);
+      setManual(r.items.length === 0);
+      setPhase(r.page >= r.total_pages ? 'exhausted' : 'idle');
     } catch (e) {
+      if (controller.signal.aborted) return;
       setError((e as Error).message);
+      setPhase('error');
     } finally {
-      setLoading(false);
+      if (request.current === controller) request.current = null;
     }
-  }, [query, page, totalPages, loading]);
+  }, [query, page, totalPages]);
 
+  // The parent remounts this grid for each query. Cleanup also handles StrictMode.
   useEffect(() => {
-    if (page === 0 && !loading) void loadNext();
-  }, [page, loading, loadNext]);
+    return () => {
+      request.current?.abort();
+      request.current = null;
+      initial.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!initial.current) { initial.current = true; void loadNext(); }
+  }, [loadNext]);
 
   useEffect(() => {
     const el = sentinel.current;
-    if (!el) return;
+    if (!el || phase !== 'idle' || manual || page === 0) return;
     const obs = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) void loadNext();
@@ -195,20 +224,23 @@ function DiscoverGrid({ query }: { query: string }) {
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [loadNext]);
+  }, [loadNext, phase, manual, page]);
 
   const add = useAddToWishlist((c) => setItems((prev) => patchList(prev, c)));
 
   return (
     <>
       {stale && <div className="stale-note">TMDB is unreachable - showing cached results, which may be out of date.</div>}
-      {error && items.length === 0 && <p className="muted">{error}</p>}
+      {notice && <p className="muted" role="status">{notice} <button onClick={refresh}>Refresh availability</button></p>}
+      {error && <p role="alert">Could not load results: {error} <button onClick={() => void loadNext()}>Retry</button></p>}
       <div className="grid">
         {items.map((c) => (
           <BrowseCardView key={`${c.media_type}:${c.tmdb_id}`} c={c} onAdd={add} />
         ))}
       </div>
-      {items.length === 0 && !loading && !error && <p className="muted">No results for this filter combination.</p>}
+      {items.length === 0 && phase === 'exhausted' && <p className="muted">No results for this filter combination.</p>}
+      {manual && phase === 'idle' && <p className="muted">No matching titles on this page. More pages are available.</p>}
+      {phase === 'idle' && page > 0 && <button onClick={() => void loadNext()}>Load more</button>}
       {loading && <p className="muted">Loading…</p>}
       <div ref={sentinel} />
     </>
@@ -235,6 +267,7 @@ function LibraryGrid({ query }: { query: string }) {
 // ---- page ----
 
 export default function Browse() {
+  const [revision, setRevision] = useState(0);
   const [searchParams, setSearchParams] = useSearchParams();
   const state = fromParams(searchParams);
   const genres = useApi<{ genres: BrowseGenre[] }>('/api/browse/genres');
@@ -269,7 +302,7 @@ export default function Browse() {
       ) : state.scope === 'library' ? (
         <LibraryGrid query={query} />
       ) : (
-        <DiscoverGrid query={query} />
+        <DiscoverGrid key={`${query}:${revision}`} query={query} refresh={() => setRevision((value) => value + 1)} />
       )}
     </>
   );

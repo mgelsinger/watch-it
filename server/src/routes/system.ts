@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import fs from 'node:fs';
 import path from 'node:path';
-import { getDb, dbPath, allSettings, setSetting, getSetting, cacheGet, cacheSet } from '../db.js';
+import { getDb, dbPath, allSettings, setSetting, getSetting, cacheGet } from '../db.js';
 import { config, localToday } from '../config.js';
 import { fetchBytes } from '../http.js';
 import * as tmdb from '../sources/tmdb.js';
@@ -11,13 +11,22 @@ import * as tvmaze from '../sources/tvmaze.js';
 import { syncState, kickGlobalRefresh, refreshTvmazeSchedule, refreshDiscoveryLists, discoveryCacheKeys } from '../services/sync.js';
 import * as q from '../services/queries.js';
 import { createBackup, inspectBackup, restoreBackup } from '../services/backup.js';
+import { regionalProviders } from '../services/providers.js';
+import { APP_VERSION } from '../version.js';
+import { REGIONS } from '../regions.js';
+import { diagnostics } from '../services/maintenance.js';
 
 function saveSafetyBackup(): string {
   const dir = path.join(config.dataDir, 'backups');
-  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `before-restore-${stamp}.watchit.json`;
-  fs.writeFileSync(path.join(dir, filename), JSON.stringify(createBackup(getDb()), null, 2));
+  const bytes = JSON.stringify(createBackup(getDb()), null, 2);
+  const space = fs.statfsSync(dir);
+  if (space.bavail * space.bsize < Buffer.byteLength(bytes) * 2 + 1024 * 1024) throw new Error('Not enough free storage for a safety backup.');
+  const temporary = path.join(dir, `${filename}.tmp`);
+  fs.writeFileSync(temporary, bytes, { flag: 'wx', mode: 0o600 });
+  fs.renameSync(temporary, path.join(dir, filename));
   const existing = fs.readdirSync(dir)
     .filter((name) => name.startsWith('before-restore-') && name.endsWith('.watchit.json'))
     .sort()
@@ -27,9 +36,10 @@ function saveSafetyBackup(): string {
 }
 
 export async function systemRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/api/health', async () => {
+  app.get('/api/diagnostics', async () => ({ ...diagnostics(), sync_running: syncState.running, last_sync_at: syncState.lastFinishedAt }));
+  app.get('/api/health', { config: { public: true } }, async () => {
     getDb().prepare('SELECT 1').get();
-    return { ok: true, version: '1.0.0' };
+    return { ok: true, version: APP_VERSION };
   });
 
   // ---- home ----
@@ -140,6 +150,7 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
     } catch { /* first boot */ }
     return {
       settings: allSettings(),
+      supported_regions: REGIONS,
       keys: { tmdb: tmdb.tmdbConfigured(), omdb: omdb.omdbConfigured() },
       omdb_quota_remaining: omdb.omdbConfigured() ? omdb.omdbQuotaRemaining() : null,
       db: { path: dbPath(), size_bytes: dbSize },
@@ -147,16 +158,14 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.put('/api/settings', async (req) => {
-    const body = z.record(z.string()).parse(req.body);
-    const allowed = new Set([
-      'region',
-      'schedule_country',
-      'broadcast_networks',
-      'pick_constraints',
-    ]);
-    for (const [k, v] of Object.entries(body)) {
-      if (allowed.has(k)) setSetting(k, v);
-    }
+    const body = z.object({
+      region: z.enum(REGIONS).optional(), schedule_country: z.enum(REGIONS).optional(),
+      broadcast_networks: z.string().max(200).regex(/^\d+(?:\|\d+)*$/).optional(),
+      pick_constraints: z.string().max(16_000).optional(),
+    }).strict().parse(req.body);
+    getDb().transaction(() => {
+      for (const [k, v] of Object.entries(body)) if (v !== undefined) setSetting(k, v);
+    })();
     return { settings: allSettings() };
   });
 
@@ -176,20 +185,11 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
   // ---- my services / provider list ----
   app.get('/api/providers', async () => {
     const region = getSetting('region');
-    const key = `tmdb_providers:${region}`;
-    let cached = cacheGet(key, 7 * 86400_000);
-    if (!cached?.fresh && tmdb.tmdbConfigured()) {
-      try {
-        cacheSet(key, await tmdb.providerList(region));
-        cached = cacheGet(key, Infinity);
-      } catch (err) {
-        console.warn('[providers] list refresh failed:', (err as Error).message);
-      }
-    }
+    const providers = await regionalProviders();
     const enabled = new Set(
       (getDb().prepare('SELECT provider_id FROM my_services WHERE enabled = 1').all() as { provider_id: number }[]).map((r) => r.provider_id),
     );
-    const list = ((cached?.payload as any[]) ?? []).map((p) => ({ ...p, enabled: enabled.has(p.provider_id) }));
+    const list = providers.map((p) => ({ ...p, enabled: enabled.has(p.provider_id) }));
     return { region, providers: list };
   });
 
@@ -226,7 +226,7 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
   };
   app.get('/api/backup/export', sendBackup);
 
-  app.post('/api/backup/inspect', async (req, reply) => {
+  app.post('/api/backup/inspect', { bodyLimit: 50 * 1024 * 1024 }, async (req, reply) => {
     try {
       const { preview } = inspectBackup(req.body);
       return { ok: true, preview };
@@ -235,7 +235,8 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.post('/api/backup/restore', async (req, reply) => {
+  app.post('/api/backup/restore', { bodyLimit: 50 * 1024 * 1024 }, async (req, reply) => {
+    if (syncState.running) return reply.code(409).send({ error: 'Wait for the current refresh to finish before restoring a profile.' });
     const body = req.body as { backup?: unknown; mode?: unknown } | null;
     if (!body || (body.mode !== 'merge' && body.mode !== 'replace')) {
       return reply.code(400).send({ error: 'choose merge or replace before restoring' });

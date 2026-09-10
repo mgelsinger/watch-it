@@ -12,6 +12,21 @@
     "dev:web": "npm run dev --workspace=web",
     "typecheck": "npm run typecheck --workspaces",
     "test": "npm run test --workspace=server",
-    "start": "npm run start --workspace=server"
+    "start": "npm run start --workspace=server",
+    "test:browser": "playwright test",
+    "test:live": "node scripts/live-smoke.mjs",
+    "test:docker": "node scripts/docker-smoke.mjs",
+    "audit:release": "node scripts/audit.mjs",
+    "check:release": "node scripts/release-check.mjs"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true,
+    "esbuild@0.28.2": true
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  },
+  "engines": {
+    "node": ">=22.12.0 <23"
   }
 }

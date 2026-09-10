@@ -58,7 +58,7 @@ export default function Home() {
           posterPath={c.poster_path}
           sub={`Next: S${c.next_season}E${c.next_episode}${c.next_episode_name ? ` · ${c.next_episode_name}` : ''}`}
           scores={cardScores(c)}
-          offers={c.my_offers}
+          offers={c.my_offers} availabilityCheck={c.availability_check}
         />
       ))} />
 
@@ -71,7 +71,7 @@ export default function Home() {
           posterPath={c.poster_path}
           flag={`S${c.tonight_season}E${c.tonight_episode} tonight`}
           scores={cardScores(c)}
-          offers={c.my_offers}
+          offers={c.my_offers} availabilityCheck={c.availability_check}
         />
       ))} />
 
@@ -84,7 +84,7 @@ export default function Home() {
           posterPath={c.poster_path}
           sub={`S${c.next_season}E${c.next_episode} ${countdown(c.next_air_date)} (${fmtDate(c.next_air_date)})`}
           scores={cardScores(c)}
-          offers={c.my_offers}
+          offers={c.my_offers} availabilityCheck={c.availability_check}
         />
       ))} />
 
@@ -97,7 +97,7 @@ export default function Home() {
           posterPath={c.poster_path}
           sub={c.my_offers?.length ? `On ${c.my_offers.map((o) => o.provider_name).join(', ')}` : undefined}
           scores={cardScores(c)}
-          offers={c.my_offers}
+          offers={c.my_offers} availabilityCheck={c.availability_check}
         />
       ))} />
 
@@ -109,13 +109,13 @@ export default function Home() {
           year={c.year}
           posterPath={c.poster_path}
           scores={cardScores(c)}
-          offers={c.my_offers}
+          offers={c.my_offers} availabilityCheck={c.availability_check}
         />
       ))} />
 
       <Row title="Now Streaming" children={data.now_streaming.map((c) => (
         <PosterCard key={c.id} linkId={c.id} name={c.name} year={c.year} posterPath={c.poster_path}
-          scores={cardScores(c)} offers={c.my_offers} />
+          scores={cardScores(c)} offers={c.my_offers} availabilityCheck={c.availability_check} />
       ))} />
 
       <Row title="New on Your Services" children={data.new_on_services.map((c) => (
@@ -127,7 +127,7 @@ export default function Home() {
           sub={c.date ? fmtDate(c.date) : undefined}
           flag={c.new_season ? 'New season' : undefined}
           scores={{ tmdb: c.tmdb_rating }}
-          offers={c.offers}
+          offers={c.offers} availabilityCheck={c.availability_check}
           onAdd={c.library_id ? undefined : () => void addToWishlist(c)}
         />
       ))} />
@@ -140,7 +140,7 @@ export default function Home() {
           posterPath={c.poster_path}
           sub={discSub(c)}
           scores={{ tmdb: c.tmdb_rating }}
-          offers={c.offers}
+          offers={c.offers} availabilityCheck={c.availability_check}
           onAdd={c.library_id ? undefined : () => void addToWishlist(c)}
         />
       ))} />
@@ -148,7 +148,7 @@ export default function Home() {
       <Row title="Recently Watched" children={data.recently_watched.map((c) => (
         <PosterCard key={c.id} linkId={c.id} name={c.name} year={c.year} posterPath={c.poster_path}
           sub={c.watched_at ? `Watched ${fmtDate(c.watched_at)}` : undefined}
-          scores={cardScores(c)} offers={c.my_offers} />
+          scores={cardScores(c)} offers={c.my_offers} availabilityCheck={c.availability_check} />
       ))} />
     </>
   );

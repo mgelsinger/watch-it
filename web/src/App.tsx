@@ -12,6 +12,7 @@ import Schedule from './pages/Schedule';
 import History from './pages/History';
 import Events from './pages/Events';
 import Settings from './pages/Settings';
+import About from './pages/About';
 import { useAuth } from './components/AuthGate';
 
 function useTheme(): [string, () => void] {
@@ -31,33 +32,38 @@ export default function App() {
   const [q, setQ] = useState('');
   const [unseen, setUnseen] = useState(0);
   const [sync, setSync] = useState<SyncState | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [theme, toggleTheme] = useTheme();
 
   // Poll unseen events + sync state (fast while a sync runs).
   useEffect(() => {
     let timer: number;
+    let active = true;
+    const controller = new AbortController();
     const poll = async () => {
       try {
-        const ev = await api<{ unseen: number }>('/api/events?unseen=1');
+        const ev = await api<{ unseen: number }>('/api/events?unseen=1', { signal: controller.signal });
+        if (!active) return;
         setUnseen(ev.unseen);
-        const st = await api<{ state: SyncState }>('/api/sync/status');
+        const st = await api<{ state: SyncState }>('/api/sync/status', { signal: controller.signal });
+        if (!active) return;
         setSync(st.state);
         timer = window.setTimeout(poll, st.state.running ? 2500 : 60_000);
       } catch {
+        if (!active) return;
         timer = window.setTimeout(poll, 60_000);
       }
     };
     void poll();
-    return () => window.clearTimeout(timer);
-  }, []);
+    return () => { active = false; controller.abort(); window.clearTimeout(timer); };
+  }, [sync?.running]);
 
   const startSync = async () => {
-    const res = await api<{ state: SyncState }>('/api/sync/run', { method: 'POST' });
-    setSync({ ...res.state, running: true });
-    window.setTimeout(async () => {
-      const st = await api<{ state: SyncState }>('/api/sync/status');
-      setSync(st.state);
-    }, 2500);
+    setSyncError(null);
+    try {
+      const res = await api<{ state: SyncState }>('/api/sync/run', { method: 'POST' });
+      setSync(res.state);
+    } catch (error) { setSyncError((error as Error).message); }
   };
 
   return (
@@ -114,6 +120,7 @@ export default function App() {
       </header>
 
       <main>
+        {syncError && <p role="alert">Refresh could not start: {syncError}</p>}
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/pick" element={<Pick />} />
@@ -125,10 +132,12 @@ export default function App() {
           <Route path="/history" element={<History />} />
           <Route path="/events" element={<Events onSeen={() => setUnseen(0)} />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/about" element={<About />} />
         </Routes>
       </main>
 
       <footer className="attribution">
+        <NavLink to="/about">About, credits and privacy</NavLink>.{' '}
         Metadata and posters from{' '}
         <a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer">TMDB</a>. This product uses the TMDB API
         but is not endorsed or certified by TMDB. Watch-provider data by{' '}

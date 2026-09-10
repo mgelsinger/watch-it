@@ -1,16 +1,27 @@
 services:
   watch-it:
     build: .
-    image: watch-it
+    image: ${WATCH_IT_IMAGE:-watch-it:local}
     container_name: watch-it
     restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     ports:
-      - "${PORT:-8300}:8300"
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8300}:8300"
     environment:
       TMDB_API_KEY: ${TMDB_API_KEY}
       OMDB_API_KEY: ${OMDB_API_KEY:-}
       WATCH_IT_PASSWORD: ${WATCH_IT_PASSWORD:-}
       WATCH_IT_SECURE_COOKIE: ${WATCH_IT_SECURE_COOKIE:-false}
+      WATCH_IT_TRUSTED_PROXIES: ${WATCH_IT_TRUSTED_PROXIES:-}
+      IMAGE_CACHE_MB: ${IMAGE_CACHE_MB:-256}
+      IMAGE_CACHE_DAYS: ${IMAGE_CACHE_DAYS:-90}
+      BACKUP_DIR: ${BACKUP_DIR:-}
+      BACKUP_RETENTION: ${BACKUP_RETENTION:-7}
       DATA_DIR: /data
       PORT: "8300"
       TZ: ${TZ:-America/New_York}

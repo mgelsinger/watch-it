@@ -1,0 +1,20 @@
+# Allow only reproducible build inputs into the Docker context.
+**
+!package.json
+!package-lock.json
+!server/
+!server/package.json
+!server/tsconfig.json
+!server/src/
+!server/src/**
+!server/scripts/
+!server/scripts/**
+!web/
+!web/package.json
+!web/tsconfig.json
+!web/vite.config.ts
+!web/index.html
+!web/src/
+!web/src/**
+!web/public/
+!web/public/**

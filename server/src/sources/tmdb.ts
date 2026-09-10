@@ -50,6 +50,7 @@ const ProviderZ = z
 
 const RegionOffersZ = z
   .object({
+    link: z.string().nullish(),
     flatrate: z.array(ProviderZ).optional(),
     rent: z.array(ProviderZ).optional(),
     buy: z.array(ProviderZ).optional(),
@@ -81,6 +82,7 @@ export const MovieDetailsZ = z
   .object({
     id: z.number(),
     title: z.string(),
+    original_language: z.string().nullish(),
     release_date: z.string().nullish(),
     overview: z.string().nullish(),
     poster_path: z.string().nullish(),
@@ -111,6 +113,7 @@ export const TvDetailsZ = z
   .object({
     id: z.number(),
     name: z.string(),
+    original_language: z.string().nullish(),
     first_air_date: z.string().nullish(),
     overview: z.string().nullish(),
     poster_path: z.string().nullish(),
@@ -146,9 +149,10 @@ export const SeasonDetailsZ = z
   })
   .passthrough();
 
-const ListEntryZ = z
+export const ListEntryZ = z
   .object({
     id: z.number(),
+    original_language: z.string().nullish(),
     title: z.string().optional(),
     name: z.string().optional(),
     release_date: z.string().nullish(),

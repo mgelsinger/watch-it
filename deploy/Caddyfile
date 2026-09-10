@@ -1,0 +1,7 @@
+{$WATCH_IT_DOMAIN} {
+    request_body {
+        max_size 50MB
+    }
+    header Referrer-Policy no-referrer
+    reverse_proxy watch-it:8300
+}

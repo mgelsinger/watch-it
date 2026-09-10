@@ -3,7 +3,8 @@ import { localToday } from '../config.js';
 import { discoveryCacheKeys } from './sync.js';
 import { getReleaseDates } from './releaseDates.js';
 import type { ListEntry } from '../sources/tmdb.js';
-import { enrichCardsWithOffers, filterAndSortOffers, type WatchOffer } from './providers.js';
+import { enrichCardsWithOffers, filterAndSortOffers, watchUrl, type WatchOffer } from './providers.js';
+import { englishVersion } from './englishVersions.js';
 
 const CARD_COLS = `t.id, t.tmdb_id, t.media_type, t.imdb_id, t.name, t.year, t.poster_path,
   t.tmdb_rating, t.imdb_rating, t.rt_score, t.metacritic, t.status_upstream, t.release_cadence`;
@@ -29,10 +30,10 @@ function attachMyOffers(rows: CardRow[]): CardRow[] {
     .prepare(`
       SELECT a.title_id, a.provider_id, a.provider_name, a.logo_path, a.offer_type FROM availability a
       JOIN my_services m ON m.provider_id = a.provider_id AND m.enabled = 1
-      WHERE a.active = 1 AND a.offer_type IN ('flatrate','free','ads')
+      WHERE a.active = 1 AND a.region = ? AND a.offer_type IN ('flatrate','free','ads')
         AND a.title_id IN (${ids.map(() => '?').join(',')})
     `)
-    .all(...ids) as (WatchOffer & { title_id: number })[];
+    .all(getSetting('region'), ...ids) as (WatchOffer & { title_id: number })[];
   const byTitle = new Map<number, WatchOffer[]>();
   for (const r of q) {
     if (!byTitle.has(r.title_id)) byTitle.set(r.title_id, []);
@@ -44,6 +45,8 @@ function attachMyOffers(rows: CardRow[]): CardRow[] {
     });
   }
   for (const row of rows) {
+    const check = db().prepare('SELECT checked_at FROM provider_checks WHERE title_id = ? AND region = ?').get(row.id, getSetting('region')) as { checked_at: string } | undefined;
+    row.availability_check = { region: getSetting('region'), checked_at: check?.checked_at ?? null, status: check ? (Date.now() - Date.parse(check.checked_at) < 86400_000 ? 'fresh' : 'stale') : 'unavailable' };
     row.my_offers = filterAndSortOffers(
       byTitle.get(row.id) ?? [],
       { myServicesOnly: true, includeRentBuy: false },
@@ -117,10 +120,11 @@ export function wishlistAvailable(): CardRow[] {
       JOIN user_state us ON us.title_id = t.id AND us.status = 'wishlist'
       JOIN availability a ON a.title_id = t.id AND a.active = 1 AND a.offer_type IN ('flatrate','free','ads')
       JOIN my_services m ON m.provider_id = a.provider_id AND m.enabled = 1
+      WHERE a.region = ?
       ORDER BY us.updated_at DESC
       LIMIT 25
     `)
-    .all() as CardRow[];
+    .all(getSetting('region')) as CardRow[];
   return attachMyOffers(rows);
 }
 
@@ -145,11 +149,12 @@ export function nowStreamingRow(): CardRow[] {
       FROM events ev
       JOIN titles t ON t.id = ev.title_id
       WHERE ev.type IN ('arrived_on_service','now_streaming') AND ev.created_at > ?
+        AND EXISTS (SELECT 1 FROM availability a WHERE a.title_id = t.id AND a.region = ? AND a.active = 1 AND a.offer_type IN ('flatrate','free','ads'))
       GROUP BY t.id
       ORDER BY event_at DESC
       LIMIT 25
     `)
-    .all(cutoff) as CardRow[];
+    .all(cutoff, getSetting('region')) as CardRow[];
   return attachMyOffers(rows);
 }
 
@@ -247,12 +252,12 @@ export async function newOnServicesRow(): Promise<DiscoveryCard[]> {
         AND EXISTS (
           SELECT 1 FROM availability a
           JOIN my_services m ON m.provider_id = a.provider_id AND m.enabled = 1
-          WHERE a.title_id = t.id AND a.active = 1 AND a.offer_type IN ('flatrate','free','ads')
+          WHERE a.title_id = t.id AND a.active = 1 AND a.region = ? AND a.offer_type IN ('flatrate','free','ads')
         )
       GROUP BY t.id
       HAVING newest_season_air >= ? AND newest_season_air <= ?
     `)
-    .all(cutoff, today) as { id: number; tmdb_id: number; name: string; poster_path: string | null; tmdb_rating: number | null; overview: string | null; newest_season_air: string }[];
+    .all(getSetting('region'), cutoff, today) as { id: number; tmdb_id: number; name: string; poster_path: string | null; tmdb_rating: number | null; overview: string | null; newest_season_air: string }[];
   for (const r of returning) {
     cards.push({
       tmdb_id: r.tmdb_id,
@@ -368,8 +373,8 @@ export function titleDetail(titleId: number): unknown | null {
 
   const cast = d.prepare('SELECT * FROM cast_members WHERE title_id = ? ORDER BY ord').all(titleId);
   const availability = d
-    .prepare('SELECT * FROM availability WHERE title_id = ? ORDER BY active DESC, offer_type, provider_name')
-    .all(titleId);
+    .prepare('SELECT * FROM availability WHERE title_id = ? AND region = ? ORDER BY active DESC, offer_type, provider_name')
+    .all(titleId, getSetting('region'));
   const events = d
     .prepare('SELECT * FROM events WHERE title_id = ? ORDER BY created_at DESC LIMIT 100')
     .all(titleId);
@@ -398,6 +403,7 @@ export function titleDetail(titleId: number): unknown | null {
   // digital release, or a show's premiere (earliest real-season air date).
   const region = getSetting('region');
   const releaseDates = title.media_type === 'movie' ? getReleaseDates(title.tmdb_id as number, region) : [];
+  const check = d.prepare('SELECT checked_at, watch_url FROM provider_checks WHERE title_id = ? AND region = ?').get(titleId, region) as { checked_at: string; watch_url: string | null } | undefined;
   const premiere =
     title.media_type === 'tv'
       ? ((d
@@ -407,9 +413,12 @@ export function titleDetail(titleId: number): unknown | null {
 
   return {
     ...title,
+    english_version: englishVersion(title.media_type as 'movie' | 'tv', title.tmdb_id as number, title.original_language as string | null),
     seasons,
     cast,
     availability,
+    availability_check: { region, checked_at: check?.checked_at ?? null, status: check ? (Date.now() - Date.parse(check.checked_at) < 86400_000 ? 'fresh' : 'stale') : 'unavailable' },
+    watch_url: watchUrl(check?.watch_url),
     events,
     my_service_ids: myServices.map((m) => m.provider_id),
     next_unwatched: nextUnwatched ?? null,

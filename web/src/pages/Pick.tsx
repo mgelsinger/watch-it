@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api, img } from '../api';
 import type { BrowseGenre, PickCandidate, PickConstraints, PickResult, PickSessionState, TitleDetail } from '../types';
+import VersionPreferences from '../components/VersionPreferences';
+import VersionNote from '../components/VersionNote';
+import ServiceExclusions from '../components/ServiceExclusions';
+import AvailabilityNote from '../components/AvailabilityNote';
 
 const DEFAULTS: PickConstraints = {
   time: 60,
@@ -10,6 +14,9 @@ const DEFAULTS: PickConstraints = {
   my_services_only: false,
   include_rent_buy: false,
   exclude_library_titles: true,
+  prefer_english: false,
+  include_adaptations: false,
+  excluded_provider_ids: [],
 };
 
 const TIME_OPTIONS: { label: string; value: number | null }[] = [
@@ -29,6 +36,10 @@ function normalizeSaved(raw: string | undefined): PickConstraints {
       time: typeof value.time === 'number' || value.time === null ? value.time : DEFAULTS.time,
       type: savedType === 'tv' || savedType === 'movie' || savedType === 'either' ? savedType : DEFAULTS.type,
       genres: Array.isArray(value.genres) ? value.genres.filter((item): item is string => typeof item === 'string') : [],
+      prefer_english: value.prefer_english === true,
+      include_adaptations: value.include_adaptations === true,
+      excluded_provider_ids: Array.isArray(value.excluded_provider_ids)
+        ? [...new Set(value.excluded_provider_ids.filter((id): id is number => typeof id === 'number' && Number.isSafeInteger(id) && id > 0))] : [],
       my_services_only: typeof value.my_services_only === 'boolean' ? value.my_services_only : DEFAULTS.my_services_only,
       include_rent_buy: typeof value.include_rent_buy === 'boolean' ? value.include_rent_buy : DEFAULTS.include_rent_buy,
       exclude_library_titles: typeof value.exclude_library_titles === 'boolean'
@@ -278,6 +289,8 @@ export default function Pick() {
                 <button
                   key={genre.key}
                   className={`chip ${constraints.genres.includes(genre.key) ? 'on' : ''}`}
+                  title={genre.description}
+                  aria-pressed={constraints.genres.includes(genre.key)}
                   onClick={() => setConstraints({
                     ...constraints,
                     genres: constraints.genres.includes(genre.key)
@@ -290,6 +303,19 @@ export default function Pick() {
               ))}
               {genres.length === 0 && <span className="muted">Genre list unavailable. Any mood will be used.</span>}
             </div>
+          </div>
+
+          <div className="pick-field">
+            <div className="pick-label">English versions</div>
+            <VersionPreferences
+              preferEnglish={!!constraints.prefer_english}
+              includeAdaptations={!!constraints.include_adaptations}
+              onChange={(patch) => setConstraints({
+                ...constraints,
+                prefer_english: patch.preferEnglish ?? constraints.prefer_english,
+                include_adaptations: patch.includeAdaptations ?? constraints.include_adaptations,
+              })}
+            />
           </div>
 
           <div className="pick-field pick-toggles">
@@ -306,7 +332,7 @@ export default function Pick() {
               {' '}Only show services I already use
             </label>
             {!constraints.my_services_only && (
-              <span className="faint pick-scope-note">Showing titles across all streaming services</span>
+              <span className="faint pick-scope-note">{constraints.excluded_provider_ids?.length ? 'Showing titles across the remaining streaming services' : 'Showing titles across all streaming services'}</span>
             )}
             {constraints.my_services_only && (
               <label className="pill" style={{ cursor: 'pointer' }}>
@@ -331,6 +357,9 @@ export default function Pick() {
             </label>
           </div>
 
+          <ServiceExclusions excluded={constraints.excluded_provider_ids ?? []}
+            onChange={(excluded_provider_ids) => setConstraints({ ...constraints, excluded_provider_ids })} />
+
           <button className="primary pick-go" onClick={start}>Pick For Me</button>
         </div>
       )}
@@ -339,6 +368,7 @@ export default function Pick() {
         <div className="pick-loop">
           {busy && !candidate && <p className="muted">Finding something available now...</p>}
           {notice && <div className="pick-notice" role="status">{notice}</div>}
+          {result?.notice && <div className="pick-notice" role="status">{result.notice}</div>}
           {error && <div className="empty"><h3>Recommendations unavailable</h3><p>{error}</p></div>}
 
           {result?.empty && !error && (
@@ -387,8 +417,11 @@ export default function Pick() {
                 </h2>
                 <div className="muted">{runtimeLine(candidate)}</div>
                 {candidate.reasons.length > 0 && <div className="pick-reasons">{candidate.reasons.join(' | ')}</div>}
+                <VersionNote info={candidate.english_version} showUnknown={!!constraints.prefer_english} />
 
                 <div className="pick-providers" aria-label="Where to watch">
+                  <AvailabilityNote check={candidate.availability_check} />
+                  {candidate.watch_url && <a href={candidate.watch_url} target="_blank" rel="noreferrer">Watch options on TMDB</a>}
                   {candidate.providers.map((offer) => (
                     <div className="pick-provider" key={offer.provider_id}>
                       {offer.logo_path && <img src={img(offer.logo_path, 'w45') ?? ''} alt="" />}

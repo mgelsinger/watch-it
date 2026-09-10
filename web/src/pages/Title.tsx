@@ -5,6 +5,8 @@ import type { Availability, BrowseCard, CastMember, Cadence, Episode, PickSessio
 import Scores from '../components/Scores';
 import PosterCard from '../components/PosterCard';
 import Carousel from '../components/Carousel';
+import VersionNote from '../components/VersionNote';
+import AvailabilityNote from '../components/AvailabilityNote';
 
 interface TitleNavigationState {
   pickSession?: PickSessionState;
@@ -359,6 +361,7 @@ export default function Title() {
             <div className="faint" style={{ marginTop: 6 }}>
               metadata refreshed {t.metadata_refreshed_at ? fmtDate(t.metadata_refreshed_at) : 'never'}
             </div>
+            <VersionNote info={t.english_version} showUnknown />
           </div>
         </div>
       </div>
@@ -475,6 +478,14 @@ export default function Title() {
         <div>
           <div className="panel">
             <h3>Where to Watch ({t.region})</h3>
+            <AvailabilityNote check={t.availability_check} />
+            {t.watch_url && <p><a href={t.watch_url} target="_blank" rel="noreferrer">Watch options on TMDB</a></p>}
+            <details>
+              <summary>Report an availability issue</summary>
+              <p className="faint">Review these details before sharing them in a project issue. Your notes and library history are excluded.</p>
+              <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{JSON.stringify({ title: t.name, tmdb_id: t.tmdb_id, type: t.media_type, region: t.region, providers: activeOffers.map((offer) => offer.provider_name), checked_at: t.availability_check?.checked_at ?? null }, null, 2)}</pre>
+              <a href="https://github.com/mgelsinger/watch-it/issues" target="_blank" rel="noreferrer">Open project issues</a>
+            </details>
             {groupedOffers.length === 0 && (
               <p className="muted" style={{ margin: 0 }}>
                 {t.status_upstream === 'In Theaters'

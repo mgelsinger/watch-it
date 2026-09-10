@@ -1,0 +1,56 @@
+name: Release checks
+on:
+  push:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  node:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run audit:release
+      - if: runner.os == 'Linux'
+        run: npx playwright install --with-deps chromium
+      - if: runner.os == 'Linux'
+        run: npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: node-checks-${{ matrix.os }}
+          path: |
+            artifacts/*.json
+            playwright-report/
+            test-results/
+  image:
+    needs: node
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: docker build --pull -t watch-it:ci-${{ github.sha }} .
+      - run: node scripts/docker-smoke.mjs watch-it:ci-${{ github.sha }}
+      - run: node scripts/proxy-smoke.mjs watch-it:ci-${{ github.sha }}
+      - run: node scripts/scan-image.mjs watch-it:ci-${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tested-image
+          path: artifacts/
+          retention-days: 7

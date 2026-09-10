@@ -2,8 +2,9 @@ import { cacheGet, cacheSet, getDb, getSetting } from '../db.js';
 import { localToday, nowIso } from '../config.js';
 import * as tmdb from '../sources/tmdb.js';
 import { enabledServiceIds } from './availability.js';
-import { getGenres, type MergedGenre } from './browse.js';
-import { offersForTitle, type WatchOffer } from './providers.js';
+import { getGenres, genreDiscoverParams } from './browse.js';
+import { discoveryProviderIds, getExternalOffers, filterAndSortOffers, type WatchOffer, type AvailabilityCheck } from './providers.js';
+import { englishVersion, knownEnglish, loadEnglishVersions, versionMatchesParams, type EnglishVersion } from './englishVersions.js';
 
 const DAY = 86400_000;
 const STREAM_TYPES = new Set<WatchOffer['offer_type']>(['flatrate', 'free', 'ads']);
@@ -16,8 +17,11 @@ export interface PickConstraints {
   type: 'tv' | 'movie' | 'either';
   genres: string[];
   my_services_only: boolean;
+  excluded_provider_ids?: number[];
   include_rent_buy: boolean;
   exclude_library_titles: boolean;
+  prefer_english?: boolean;
+  include_adaptations?: boolean;
 }
 
 export type PickSource = 'new_release' | 'airing_now' | 'popular';
@@ -34,8 +38,11 @@ export interface PickCandidate {
   runtime: number;
   runtime_estimated: boolean;
   providers: WatchOffer[];
+  availability_check: AvailabilityCheck;
+  watch_url: string | null;
   rent_buy_only: boolean;
   reasons: string[];
+  english_version?: EnglishVersion;
 }
 
 export interface Loosen {
@@ -48,6 +55,7 @@ export interface PickResult {
   pool_size: number;
   exhausted?: boolean;
   empty?: { message: string; loosen: Loosen[] };
+  notice?: string;
 }
 
 interface DiscoveryCandidate {
@@ -62,6 +70,7 @@ interface DiscoveryCandidate {
   popularity: number;
   source: PickSource;
   score: number;
+  english_version: EnglishVersion;
 }
 
 interface DiscoveryQuery {
@@ -105,22 +114,22 @@ function mediaTypes(type: PickConstraints['type']): ('movie' | 'tv')[] {
   return type === 'either' ? ['movie', 'tv'] : [type];
 }
 
-function serviceParams(c: PickConstraints): Record<string, string> | null {
+async function serviceParams(c: PickConstraints): Promise<Record<string, string> | null> {
   const region = getSetting('region');
   const params: Record<string, string> = {
     watch_region: region,
     with_watch_monetization_types: c.include_rent_buy ? 'flatrate|free|ads|rent|buy' : 'flatrate|free|ads',
   };
-  if (c.my_services_only) {
-    const providers = [...enabledServiceIds()].sort((a, b) => a - b);
-    if (providers.length === 0) return null;
+  const providers = await discoveryProviderIds(c.excluded_provider_ids ?? [], c.my_services_only);
+  if (providers?.length === 0) return null;
+  if (providers) {
     params.with_watch_providers = providers.join('|');
   }
   return params;
 }
 
 async function buildQueries(c: PickConstraints): Promise<DiscoveryQuery[]> {
-  const services = serviceParams(c);
+  const services = await serviceParams(c);
   if (!services) return [];
   const genres = c.genres.length > 0 ? await getGenres() : [];
   const today = localToday();
@@ -130,12 +139,7 @@ async function buildQueries(c: PickConstraints): Promise<DiscoveryQuery[]> {
   const queries: DiscoveryQuery[] = [];
 
   for (const mediaType of mediaTypes(c.type)) {
-    const genreIds = c.genres.flatMap((key) =>
-      genres.find((g: MergedGenre) => g.key === key)?.[mediaType === 'movie' ? 'movie_ids' : 'tv_ids'] ?? [],
-    );
-    if (c.genres.length > 0 && genreIds.length === 0) continue;
     const common: Record<string, string> = { ...services, include_adult: 'false' };
-    if (genreIds.length > 0) common.with_genres = genreIds.join('|');
     if (budget != null) common['with_runtime.lte'] = String(budget);
 
     if (mediaType === 'movie') {
@@ -188,7 +192,11 @@ async function buildQueries(c: PickConstraints): Promise<DiscoveryQuery[]> {
       },
     });
   }
-  return queries;
+  return queries.flatMap((query) =>
+    genreDiscoverParams(query.mediaType, c.genres, genres).map((params) => ({
+      ...query, params: { ...query.params, ...params },
+    })),
+  );
 }
 
 function sourceBoost(source: PickSource): number {
@@ -217,6 +225,7 @@ function toCandidate(entry: tmdb.ListEntry, query: DiscoveryQuery): DiscoveryCan
   const date = query.mediaType === 'movie' ? entry.release_date : entry.first_air_date;
   return {
     key: `${query.mediaType}:${entry.id}`,
+    english_version: englishVersion(query.mediaType, entry.id, entry.original_language),
     tmdb_id: entry.id,
     library_id: null,
     media_type: query.mediaType,
@@ -338,11 +347,18 @@ function reasonsFor(candidate: DiscoveryCandidate, offers: WatchOffer[], c: Pick
   return reasons;
 }
 
-function empty(message: string, loosen: Loosen[] = []): PickResult {
-  return { candidate: null, pool_size: 0, empty: { message, loosen } };
+function empty(message: string, loosen: Loosen[] = [], notice?: string): PickResult {
+  return { candidate: null, pool_size: 0, empty: { message, loosen }, notice };
 }
 
 export async function pickNext(c: PickConstraints, exclude: string[]): Promise<PickResult> {
+  if (c.my_services_only && c.excluded_provider_ids?.length &&
+      [...enabledServiceIds()].every((id) => c.excluded_provider_ids!.includes(id))) {
+    return empty('All of your selected services are excluded. Clear exclusions or search other services.', [
+      { label: 'Clear service exclusions', patch: { excluded_provider_ids: [] } },
+      { label: 'Other services', patch: { my_services_only: false } },
+    ]);
+  }
   if (c.my_services_only && enabledServiceIds().size === 0) {
     return empty('Choose streaming services in Settings, or allow recommendations from any service.', [
       { label: 'Any service', patch: { my_services_only: false, include_rent_buy: false } },
@@ -363,16 +379,35 @@ export async function pickNext(c: PickConstraints, exclude: string[]): Promise<P
     }
   }
 
+  let notice: string | undefined = settled.some((result) => result.status === 'rejected') ? 'Some searches could not be refreshed. Results may be incomplete.' : undefined;
+  if (c.include_adaptations) {
+    const versions = await loadEnglishVersions(c.genres, mediaTypes(c.type), true);
+    if (versions.incomplete) notice = 'Some English-version details could not be refreshed. Results may be incomplete or use cached details.';
+    const common = await serviceParams(c);
+    for (const version of versions.entries) {
+      if (!common) break;
+      const params: Record<string, string> = {
+        ...common, 'vote_count.gte': '200', sort_by: 'popularity.desc',
+        [`${version.media_type === 'movie' ? 'primary_release_date' : 'first_air_date'}.lte`]: localToday(),
+      };
+      if (c.time != null && c.time < 120) params['with_runtime.lte'] = String(c.time);
+      if (!versionMatchesParams(version, params)) continue;
+      const candidate = toCandidate(version.entry, { mediaType: version.media_type, source: 'popular', params });
+      if (!deduped.has(candidate.key)) deduped.set(candidate.key, candidate);
+    }
+  }
+
   let pool = attachLibraryState([...deduped.values()], c);
   if (pool.length === 0) {
     return empty('No current titles match these filters.', [
+      ...(c.excluded_provider_ids?.length ? [{ label: 'Clear service exclusions', patch: { excluded_provider_ids: [] } as Partial<PickConstraints> }] : []),
       ...(c.genres.length > 0 ? [{ label: 'Any mood', patch: { genres: [] } as Partial<PickConstraints> }] : []),
       ...(c.my_services_only ? [{ label: 'Any service', patch: { my_services_only: false } as Partial<PickConstraints> }] : []),
       ...(c.time != null ? [{ label: 'No time limit', patch: { time: null } as Partial<PickConstraints> }] : []),
       ...(c.exclude_library_titles
         ? [{ label: 'Include tracked titles', patch: { exclude_library_titles: false } as Partial<PickConstraints> }]
         : []),
-    ]);
+    ], notice);
   }
 
   const history = recentSuggestions();
@@ -382,29 +417,34 @@ export async function pickNext(c: PickConstraints, exclude: string[]): Promise<P
     return !last || Date.parse(last) < cooldown;
   });
   if (pool.length === 0) {
-    return empty(`You have already seen every matching recommendation in the last ${REPEAT_COOLDOWN_DAYS} days. Try again later or adjust the filters.`);
+    return empty(`You have already seen every matching recommendation in the last ${REPEAT_COOLDOWN_DAYS} days. Try again later or adjust the filters.`, [], notice);
   }
 
   const seen = new Set(exclude);
   const poolSize = pool.length;
   pool = pool.filter((candidate) => !seen.has(candidate.key));
-  if (pool.length === 0) return { candidate: null, pool_size: poolSize, exhausted: true };
+  if (pool.length === 0) return { candidate: null, pool_size: poolSize, exhausted: true, notice };
   scoreCandidates(pool, history);
 
   const budget = c.time != null && c.time < 120 ? c.time : null;
   const drawable = [...pool];
-  while (drawable.length > 0) {
-    const candidate = softmaxDraw(drawable);
+  let checked = 0;
+  while (drawable.length > 0 && checked++ < 12) {
+    const preferred = c.prefer_english ? drawable.filter((item) => knownEnglish(item.english_version)) : [];
+    const candidate = softmaxDraw(preferred.length > 0 ? preferred : drawable);
     const index = drawable.findIndex((item) => item.key === candidate.key);
     drawable.splice(index, 1);
     try {
-      const [runtime, offers] = await Promise.all([
+      const [runtime, availability] = await Promise.all([
         runtimeFor(candidate),
-        offersForTitle(candidate.media_type, candidate.tmdb_id, {
+        getExternalOffers(candidate.media_type, candidate.tmdb_id),
+      ]);
+      const offers = filterAndSortOffers(availability.offers, {
           myServicesOnly: c.my_services_only,
           includeRentBuy: c.include_rent_buy,
-        }),
-      ]);
+          excludedProviderIds: c.excluded_provider_ids,
+        });
+      if (availability.availability_check.status !== 'fresh') notice = 'Some availability checks failed or used cached offers. Results may be incomplete; try again shortly.';
       if (offers.length === 0 || (budget != null && runtime.minutes > budget)) continue;
       logSuggestion(candidate.media_type, candidate.tmdb_id, candidate.library_id, 'shown', c);
       return {
@@ -420,20 +460,26 @@ export async function pickNext(c: PickConstraints, exclude: string[]): Promise<P
           runtime: runtime.minutes,
           runtime_estimated: runtime.estimated,
           providers: offers,
+          availability_check: availability.availability_check,
+          watch_url: availability.watch_url,
           rent_buy_only: offers.every((offer) => !STREAM_TYPES.has(offer.offer_type)),
           reasons: reasonsFor(candidate, offers, c),
+          english_version: candidate.english_version,
         },
         pool_size: poolSize,
+        notice,
       };
     } catch {
+      notice = 'Some title checks failed. Results may be incomplete; try again shortly.';
       continue;
     }
   }
 
   return empty('Availability changed while checking these titles. Try broader filters or try again shortly.', [
+    ...(c.excluded_provider_ids?.length ? [{ label: 'Clear service exclusions', patch: { excluded_provider_ids: [] } as Partial<PickConstraints> }] : []),
     ...(c.my_services_only ? [{ label: 'Any service', patch: { my_services_only: false } as Partial<PickConstraints> }] : []),
     ...(c.time != null ? [{ label: 'No time limit', patch: { time: null } as Partial<PickConstraints> }] : []),
-  ]);
+  ], notice);
 }
 
 export function logSuggestion(

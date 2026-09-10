@@ -14,12 +14,17 @@ export function dbPath(): string {
 
 export function getDb(): DB {
   if (db) return db;
-  fs.mkdirSync(config.dataDir, { recursive: true });
+  fs.mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
   db = new Database(dbPath());
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
   return db;
+}
+
+export function closeDb(): void {
+  if (db?.open) { db.pragma('wal_checkpoint(TRUNCATE)'); db.close(); }
+  db = null;
 }
 
 export function migrate(): void {

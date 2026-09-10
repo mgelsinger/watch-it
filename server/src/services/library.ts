@@ -155,7 +155,7 @@ async function fetchAndStore(
 
   let common: {
     name: string; year: number | null; overview: string | null; poster: string | null; backdrop: string | null;
-    rating: number | null; genres: string; runtime: number | null; status: string | null; imdb: string | null;
+    rating: number | null; genres: string; language: string | null; runtime: number | null; status: string | null; imdb: string | null;
     providers: Record<string, tmdb.RegionOffers>;
     cast: { id: number; name: string; character?: string | null; order?: number | null; profile_path?: string | null }[];
   };
@@ -171,6 +171,7 @@ async function fetchAndStore(
       backdrop: d.backdrop_path ?? null,
       rating: d.vote_average ?? null,
       genres: JSON.stringify(d.genres.map((g) => g.name)),
+      language: d.original_language ?? null,
       runtime: d.runtime ?? null,
       status: movieStatus(d),
       imdb: d.external_ids?.imdb_id ?? d.imdb_id ?? null,
@@ -189,6 +190,7 @@ async function fetchAndStore(
       backdrop: d.backdrop_path ?? null,
       rating: d.vote_average ?? null,
       genres: JSON.stringify(d.genres.map((g) => g.name)),
+      language: d.original_language ?? null,
       runtime: d.episode_run_time[0] ?? null,
       status: d.status ?? null,
       imdb: d.external_ids?.imdb_id ?? null,
@@ -202,20 +204,20 @@ async function fetchAndStore(
     const res = db
       .prepare(`
         INSERT INTO titles (tmdb_id, media_type, imdb_id, name, year, overview, poster_path, backdrop_path,
-                            tmdb_rating, genres, runtime, status_upstream, added_at, metadata_refreshed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            tmdb_rating, genres, original_language, runtime, status_upstream, added_at, metadata_refreshed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(tmdbId, mediaType, common.imdb, common.name, common.year, common.overview, common.poster, common.backdrop,
-        common.rating, common.genres, common.runtime, common.status, now, now);
+        common.rating, common.genres, common.language, common.runtime, common.status, now, now);
     titleId = Number(res.lastInsertRowid);
   } else {
     titleId = existingId;
     db.prepare(`
       UPDATE titles SET imdb_id = ?, name = ?, year = ?, overview = ?, poster_path = ?, backdrop_path = ?,
-                        tmdb_rating = ?, genres = ?, runtime = ?, status_upstream = ?, metadata_refreshed_at = ?
+                        tmdb_rating = ?, genres = ?, original_language = ?, runtime = ?, status_upstream = ?, metadata_refreshed_at = ?
       WHERE id = ?
     `).run(common.imdb, common.name, common.year, common.overview, common.poster, common.backdrop,
-      common.rating, common.genres, common.runtime, common.status, now, titleId);
+      common.rating, common.genres, common.language, common.runtime, common.status, now, titleId);
   }
 
   upsertCast(titleId, common.cast);

@@ -3,6 +3,7 @@ import { api, img, useApi } from '../api';
 import type { Provider, SyncLogRow, SyncState } from '../types';
 
 interface SettingsData {
+  supported_regions: string[];
   settings: Record<string, string>;
   keys: { tmdb: boolean; omdb: boolean };
   omdb_quota_remaining: number | null;
@@ -36,7 +37,6 @@ interface SaveFilePickerWindow extends Window {
   }) => Promise<SaveFilePickerHandle>;
 }
 
-const REGIONS = ['US', 'CA', 'GB', 'AU', 'DE', 'FR', 'ES', 'IT', 'NL', 'SE', 'NO', 'DK', 'BR', 'MX', 'JP', 'KR', 'IN'];
 
 function fmtBytes(n: number): string {
   if (n > 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
@@ -74,7 +74,10 @@ function KeyTest({ source, label, present }: { source: string; label: string; pr
 }
 
 export default function Settings() {
-  const { data, loading, reload } = useApi<SettingsData>('/api/settings');
+  const { data, loading, error, reload } = useApi<SettingsData>('/api/settings');
+  const REGIONS = data?.supported_regions ?? [];
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const diagnostics = useApi<{ version: string; last_backup_at: string | null; backup_error: string | null; scheduled_backups: boolean }>('/api/diagnostics');
   const providers = useApi<{ region: string; providers: Provider[] }>('/api/providers');
   const sync = useApi<{ state: SyncState; log: SyncLogRow[] }>('/api/sync/status');
   const [providerFilter, setProviderFilter] = useState('');
@@ -85,9 +88,13 @@ export default function Settings() {
   const [backupPreview, setBackupPreview] = useState<BackupPreview | null>(null);
 
   const saveSetting = async (key: string, value: string) => {
+    setSettingsError(null);
+    try {
     await api('/api/settings', { method: 'PUT', json: { [key]: value } });
     reload();
     providers.reload();
+    window.dispatchEvent(new Event('watch-it-settings-changed'));
+    } catch (error) { setSettingsError((error as Error).message); }
   };
 
   const toggleProvider = async (p: Provider) => {
@@ -183,7 +190,8 @@ export default function Settings() {
     }
   };
 
-  if (loading || !data) return <p className="muted">Loading…</p>;
+  if (error) return <p role="alert">Settings unavailable: {error} <button onClick={reload}>Retry</button></p>;
+  if (loading || !data) return <p className="muted">Loading...</p>;
 
   const filteredProviders = (providers.data?.providers ?? []).filter((p) =>
     p.provider_name.toLowerCase().includes(providerFilter.toLowerCase()),
@@ -193,6 +201,11 @@ export default function Settings() {
   return (
     <div className="settings-section">
       <h1>Settings</h1>
+      {diagnostics.data?.scheduled_backups && <p role="status">Scheduled backups: {diagnostics.data.backup_error ?? (diagnostics.data.last_backup_at ? `last success ${diagnostics.data.last_backup_at}` : 'waiting for the next daily refresh')}.</p>}
+      <p><a href="/api/diagnostics" target="_blank" rel="noreferrer">Review support diagnostics</a>. This local report contains installation status, with no library contents or credentials. Nothing is uploaded.</p>
+      {settingsError && <p role="alert">{settingsError}</p>}
+      {!data.keys.tmdb && <div className="stale-note" role="status">To get started, set your TMDB key in the installation environment and restart the app. Then test the key below, choose your region, and optionally select your services. Your library is preserved.</div>}
+      <p className="muted">Subscriptions describe services you use. Browse and Pick exclusions let you leave specific services out of a search. You can change these settings at any time.</p>
 
       <div className="panel">
         <h3>API keys</h3>

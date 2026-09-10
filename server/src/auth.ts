@@ -11,54 +11,54 @@ import {
   revokeSession,
   sessionCookie,
   sessionIsValid,
+  reconcileCredentials,
 } from './services/auth.js';
 
-const PUBLIC_API_PATHS = new Set(['/api/health', '/api/auth/status', '/api/auth/login']);
+declare module 'fastify' { interface FastifyContextConfig { public?: boolean } }
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILURES = 5;
-const failedLogins = new Map<string, number[]>();
-
-function requestPath(url: string): string {
-  return url.split('?', 1)[0];
-}
-
-function recentFailures(ip: string, now: number): number[] {
-  const recent = (failedLogins.get(ip) ?? []).filter((time) => now - time < WINDOW_MS);
-  if (recent.length) failedLogins.set(ip, recent);
-  else failedLogins.delete(ip);
-  return recent;
-}
 
 export function registerAuth(app: FastifyInstance): void {
+  const failedLogins = new Map<string, number[]>();
+  let globalFailures: number[] = [];
   if (config.authPassword && config.authPassword.length < 12) {
     throw new Error('WATCH_IT_PASSWORD must contain at least 12 characters');
   }
+  reconcileCredentials(getDb(), config.authPassword);
 
   app.addHook('onRequest', async (req, reply) => {
-    if (!config.authPassword || !req.url.startsWith('/api/') || req.method === 'OPTIONS') return;
-    if (PUBLIC_API_PATHS.has(requestPath(req.url))) return;
+    // Reject ambiguous path spellings before routing or static-file resolution.
+    const pathname = req.url.split('?', 1)[0];
+    if (/%|\\|\/\/|(?:^|\/)\.{1,2}(?:\/|$)/.test(pathname)) return reply.code(400).send({ error: 'invalid path' });
+    if (!config.authPassword || req.routeOptions.config.public === true) return;
     const authenticated = sessionIsValid(getDb(), cookieValue(req.headers.cookie));
     if (!authenticated) return reply.code(401).send({ error: 'login required' });
   });
 
-  app.get('/api/auth/status', async (req) => {
+  app.get('/api/auth/status', { config: { public: true } }, async (req) => {
     const enabled = Boolean(config.authPassword);
     const authenticated = !enabled || sessionIsValid(getDb(), cookieValue(req.headers.cookie));
     return { enabled, authenticated };
   });
 
-  app.post('/api/auth/login', async (req, reply) => {
+  app.post('/api/auth/login', { config: { public: true }, bodyLimit: 2048 }, async (req, reply) => {
     if (!config.authPassword) return { enabled: false, authenticated: true };
     const now = Date.now();
-    const failures = recentFailures(req.ip, now);
-    if (failures.length >= MAX_FAILURES) {
-      reply.header('retry-after', String(Math.ceil((WINDOW_MS - (now - failures[0])) / 1000)));
+    for (const [ip, times] of failedLogins) {
+      const recent = times.filter((time) => now - time < WINDOW_MS);
+      if (recent.length) failedLogins.set(ip, recent); else failedLogins.delete(ip);
+    }
+    globalFailures = globalFailures.filter((time) => now - time < WINDOW_MS);
+    const failures = failedLogins.get(req.ip) ?? [];
+    if (failures.length >= MAX_FAILURES || globalFailures.length >= 100 || (failedLogins.size >= 1024 && !failedLogins.has(req.ip))) {
+      reply.header('retry-after', String(Math.max(1, Math.ceil((WINDOW_MS - (now - (failures[0] ?? globalFailures[0] ?? now))) / 1000))));
       return reply.code(429).send({ error: 'too many login attempts; try again later' });
     }
 
     const body = z.object({ password: z.string().min(1).max(1024) }).parse(req.body);
     if (!passwordMatches(config.authPassword, body.password)) {
       failedLogins.set(req.ip, [...failures, now]);
+      globalFailures.push(now);
       return reply.code(401).send({ error: 'incorrect password' });
     }
 

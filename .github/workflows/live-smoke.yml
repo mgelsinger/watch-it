@@ -1,0 +1,21 @@
+name: Opt-in live provider check
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:live
+        env:
+          WATCH_IT_LOAD_ENV: 'false'
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}

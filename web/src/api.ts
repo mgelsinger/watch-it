@@ -40,18 +40,25 @@ export function useApi<T>(path: string | null): {
   const [loading, setLoading] = useState(!!path);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const refresh = () => setTick((value) => value + 1);
+    window.addEventListener('watch-it-settings-changed', refresh);
+    return () => window.removeEventListener('watch-it-settings-changed', refresh);
+  }, []);
 
   useEffect(() => {
     if (!path) return;
     let alive = true;
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
-    api<T>(path)
+    api<T>(path, { signal: controller.signal })
       .then((d) => alive && setData(d))
       .catch((e: Error) => alive && setError(e.message))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
+      controller.abort();
     };
   }, [path, tick]);
 

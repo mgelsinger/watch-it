@@ -51,7 +51,7 @@ export default function Library() {
               c.user_status === 'wishlist' ? 'Watchlist' : c.user_status === 'saved' ? 'Saved for Later' : c.user_status
             }`}
             scores={{ rt: c.rt_score, imdb: c.imdb_rating, mc: c.metacritic, tmdb: c.tmdb_rating }}
-            offers={c.my_offers}
+            offers={c.my_offers} availabilityCheck={c.availability_check}
           />
         ))}
       </div>

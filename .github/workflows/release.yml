@@ -1,0 +1,40 @@
+name: Prepare a self-install release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  decisions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: node scripts/release-check.mjs
+  checks:
+    needs: decisions
+    uses: ./.github/workflows/ci.yml
+  draft:
+    needs: checks
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: tested-image
+          path: artifacts
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Tag and export the exact tested image
+        run: |
+          docker load --input artifacts/image.tar
+          node scripts/package-release.mjs
+      - name: Create a draft for owner review
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --draft --notes-file docs/RELEASE_NOTES.md artifacts/watch-it-*.tar artifacts/checksums.txt artifacts/docker-smoke.json artifacts/container-audit.json

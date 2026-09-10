@@ -1,7 +1,9 @@
 import { useNavigate } from 'react-router-dom';
 import { img } from '../api';
 import { MiniScores } from './Scores';
-import type { WatchOffer } from '../types';
+import type { AvailabilityCheck, EnglishVersion, WatchOffer } from '../types';
+import VersionNote from './VersionNote';
+import AvailabilityNote from './AvailabilityNote';
 
 export interface PosterCardProps {
   linkId?: number | null; // library title id to navigate to
@@ -14,6 +16,8 @@ export interface PosterCardProps {
   statusBadge?: string | null; // library status chip (top-right; only when already added)
   scores?: { rt?: number | null; imdb?: number | null; mc?: number | null; tmdb?: number | null };
   offers?: WatchOffer[];
+  englishVersion?: EnglishVersion;
+  availabilityCheck?: AvailabilityCheck;
   onAdd?: () => void; // shown for titles not yet in the library
   onOpen?: () => void;
 }
@@ -65,6 +69,8 @@ export default function PosterCard(p: PosterCardProps) {
       <div className="card-body">
         <div className="card-name">{p.name}</div>
         <div className="card-sub">{p.sub ?? p.year ?? ''}</div>
+        <VersionNote info={p.englishVersion} compact />
+        <AvailabilityNote check={p.availabilityCheck} />
         {primaryOffer && (
           <div className="card-provider" title={offerLabel} aria-label={`Available on ${offerLabel}`}>
             {primaryOffer.logo_path && (

@@ -29,6 +29,7 @@ export interface Card {
   release_cadence: string | null;
   user_status?: UserStatus;
   my_offers?: WatchOffer[];
+  availability_check?: AvailabilityCheck;
   // row-specific extras
   next_episode_id?: number;
   next_episode_name?: string | null;
@@ -53,6 +54,7 @@ export interface DiscoveryCard {
   digital_date?: string | null;
   physical_date?: string | null;
   offers?: WatchOffer[];
+  availability_check?: AvailabilityCheck;
 }
 
 export interface Episode {
@@ -124,6 +126,7 @@ export interface NextEpisode {
 }
 
 export interface TitleDetail extends Card {
+  english_version?: EnglishVersion;
   overview: string | null;
   backdrop_path: string | null;
   genres: string;
@@ -139,6 +142,8 @@ export interface TitleDetail extends Card {
   seasons: Season[];
   cast: CastMember[];
   availability: Availability[];
+  availability_check?: AvailabilityCheck;
+  watch_url?: string | null;
   events: EventRow[];
   my_service_ids: number[];
   next_unwatched: NextEpisode | null;
@@ -151,6 +156,7 @@ export interface TitleDetail extends Card {
 }
 
 export interface BrowseCard {
+  english_version?: EnglishVersion;
   tmdb_id: number;
   media_type: MediaType;
   name: string;
@@ -163,17 +169,20 @@ export interface BrowseCard {
   library_id: number | null;
   user_status: UserStatus | null;
   offers?: WatchOffer[];
+  availability_check?: AvailabilityCheck;
 }
 
 export interface BrowseGenre {
   key: string;
   name: string;
+  description?: string;
   movie_ids: number[];
   tv_ids: number[];
   names: string[];
 }
 
 export interface BrowseGridPage {
+  notice?: string;
   items: BrowseCard[];
   page: number;
   total_pages: number;
@@ -228,6 +237,9 @@ export interface Provider {
 // ---- Pick For Me ----
 
 export interface PickConstraints {
+  excluded_provider_ids?: number[];
+  prefer_english?: boolean;
+  include_adaptations?: boolean;
   /** Minutes; null or >= 120 ("2h+" / "No limit") disables the budget filter. */
   time: number | null;
   type: 'tv' | 'movie' | 'either';
@@ -238,6 +250,7 @@ export interface PickConstraints {
 }
 
 export interface PickCandidate {
+  english_version?: EnglishVersion;
   key: string;
   tmdb_id: number;
   library_id: number | null;
@@ -249,6 +262,8 @@ export interface PickCandidate {
   runtime: number;
   runtime_estimated: boolean;
   providers: WatchOffer[];
+  availability_check?: AvailabilityCheck;
+  watch_url?: string | null;
   rent_buy_only: boolean;
   reasons: string[];
 }
@@ -259,6 +274,7 @@ export interface PickLoosen {
 }
 
 export interface PickResult {
+  notice?: string;
   candidate: PickCandidate | null;
   pool_size: number;
   exhausted?: boolean;
@@ -269,6 +285,16 @@ export interface PickSessionState {
   constraints: PickConstraints;
   result: PickResult | null;
   shown: string[];
+}
+
+export interface EnglishVersion {
+  audio: 'original' | 'dub' | 'unknown';
+  audio_source?: string;
+  adaptation_of?: string;
+  adaptation_source?: string;
+  checked_at?: string;
+  audio_provider?: string;
+  audio_region?: string;
 }
 
 export interface SyncState {
@@ -289,4 +315,10 @@ export interface SyncLogRow {
   finished_at: string | null;
   ok: number | null;
   error: string | null;
+}
+
+export interface AvailabilityCheck {
+  status: 'fresh' | 'stale' | 'unavailable';
+  region: string;
+  checked_at: string | null;
 }

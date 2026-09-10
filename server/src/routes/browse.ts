@@ -7,12 +7,16 @@ const FiltersQ = z.object({
   type: z.enum(['movie', 'tv', 'both']).default('both'),
   genres: z.string().default(''), // csv of merged genre keys
   watch: z.enum(['any', 'my', 'streaming', 'broadcast']).default('any'),
+  exclude_providers: z.string().default('').transform((value) => value.trim() ? value.split(',').map((id) => Number(id.trim())) : [])
+    .pipe(z.array(z.number().int().positive().safe()).max(500)).transform((ids) => [...new Set(ids)].sort((a, b) => a - b)),
   status: z.enum(['', 'returning', 'ended', 'canceled']).default(''),
   library: z.enum(['', 'not_added', 'saved', 'wishlist', 'watching', 'watched', 'dropped']).default(''),
   year_min: z.coerce.number().int().min(1870).max(2100).optional(),
   year_max: z.coerce.number().int().min(1870).max(2100).optional(),
   rating: z.coerce.number().min(0).max(10).optional(),
   bingeable: z.string().optional(),
+  prefer_english: z.enum(['0', '1']).default('0'),
+  include_adaptations: z.enum(['0', '1']).default('0'),
   sort: z.enum(['newest', 'rating', 'popular', 'az', 'added', 'watched']).default('newest'),
   page: z.coerce.number().int().min(1).max(500).default(1),
 });
@@ -22,12 +26,15 @@ function toFilters(q: z.infer<typeof FiltersQ>): BrowseFilters {
     type: q.type,
     genres: q.genres.split(',').map((s) => s.trim()).filter(Boolean),
     watch: q.watch,
+    excludedProviders: q.exclude_providers,
     status: q.status,
     library: q.library,
     yearMin: q.year_min ?? null,
     yearMax: q.year_max ?? null,
     rating: q.rating ?? null,
     bingeable: q.bingeable === '1',
+    preferEnglish: q.prefer_english === '1',
+    includeAdaptations: q.include_adaptations === '1',
     sort: q.sort,
   };
 }

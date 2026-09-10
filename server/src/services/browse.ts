@@ -1,8 +1,9 @@
 import { getDb, getSetting, cacheGet, cacheSet } from '../db.js';
 import { nowIso, localToday } from '../config.js';
+import { singleFlight } from '../singleFlight.js';
 import * as tmdb from '../sources/tmdb.js';
-import { enabledServiceIds } from './availability.js';
-import { enrichCardsWithOffers, type WatchOffer } from './providers.js';
+import { discoveryProviderIds, enrichCardsWithOffers, type WatchOffer } from './providers.js';
+import { adaptationIds, englishVersion, knownEnglish, loadEnglishVersions, versionMatchesParams, type EnglishVersion } from './englishVersions.js';
 
 const DAY = 86400_000;
 const WEEK = 7 * DAY;
@@ -22,6 +23,7 @@ export interface BrowseCard {
   library_id: number | null;
   user_status: string | null;
   offers?: WatchOffer[];
+  english_version?: EnglishVersion;
 }
 
 function toCard(e: tmdb.ListEntry, mediaType: 'movie' | 'tv'): BrowseCard {
@@ -39,6 +41,7 @@ function toCard(e: tmdb.ListEntry, mediaType: 'movie' | 'tv'): BrowseCard {
     overview: e.overview ?? null,
     library_id: null,
     user_status: null,
+    english_version: englishVersion(mediaType, e.id, e.original_language),
   };
 }
 
@@ -74,14 +77,16 @@ function attachLibrary(cards: BrowseCard[]): BrowseCard[] {
 async function cachedFetch<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Promise<{ payload: T; stale: boolean }> {
   const cached = cacheGet(key, ttlMs);
   if (cached?.fresh) return { payload: cached.payload as T, stale: false };
-  try {
-    const fresh = await fetcher();
-    cacheSet(key, fresh);
-    return { payload: fresh, stale: false };
-  } catch (err) {
-    if (cached) return { payload: cached.payload as T, stale: true }; // offline: degrade to stale cache
-    throw err;
-  }
+  return singleFlight(key, async () => {
+    try {
+      const fresh = await fetcher();
+      cacheSet(key, fresh);
+      return { payload: fresh, stale: false };
+    } catch (err) {
+      if (cached) return { payload: cached.payload as T, stale: true }; // offline: degrade to stale cache
+      throw err;
+    }
+  });
 }
 
 /** Remember a Discover query so the daily sync re-warms page 1 for 7 days. */
@@ -106,6 +111,8 @@ export interface MergedGenre {
   movie_ids: number[];
   tv_ids: number[];
   names: string[]; // original TMDB genre names, for matching titles.genres json
+  original_language?: string;
+  description?: string;
 }
 
 // TMDB movie and TV genre lists mostly overlap by name; these cross-type
@@ -120,7 +127,31 @@ const GENRE_ALIASES: Record<string, { key: string; name: string }> = {
   'war & politics': { key: 'war', name: 'War' },
 };
 
-const GENRE_PRIORITY = ['Drama', 'Comedy', 'Action', 'Sci-Fi & Fantasy', 'Thriller', 'Crime', 'Documentary', 'Animation', 'Horror', 'Romance'];
+const GENRE_PRIORITY = ['Drama', 'Korean Dramas', 'Comedy', 'Action', 'Sci-Fi & Fantasy', 'Thriller', 'Crime', 'Documentary', 'Animation', 'Anime', 'Horror', 'Romance'];
+
+const SPECIAL_GENRES: MergedGenre[] = [
+  {
+    key: 'korean-drama', name: 'Korean Dramas', movie_ids: [], tv_ids: [18], names: ['Drama'],
+    original_language: 'ko', description: 'Korean-language TV dramas',
+  },
+  {
+    key: 'anime', name: 'Anime', movie_ids: [16], tv_ids: [16], names: ['Animation'],
+    original_language: 'ja', description: 'Japanese-language animated movies and TV shows',
+  },
+];
+
+/** Separate language-specific branches preserve OR matching across selected genres. */
+export function genreDiscoverParams(mt: 'movie' | 'tv', keys: string[], genres: MergedGenre[]): Record<string, string>[] {
+  if (keys.length === 0) return [{}];
+  const side = mt === 'movie' ? 'movie_ids' : 'tv_ids';
+  const selected = genres.filter((g) => keys.includes(g.key) && g[side].length > 0);
+  const ids = [...new Set(selected.filter((g) => !g.original_language).flatMap((g) => g[side]))];
+  const params: Record<string, string>[] = ids.length ? [{ with_genres: ids.join('|') }] : [];
+  for (const g of selected.filter((g) => g.original_language)) {
+    params.push({ with_genres: g[side].join('|'), with_original_language: g.original_language! });
+  }
+  return params;
+}
 
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -142,16 +173,15 @@ export async function getGenres(): Promise<MergedGenre[]> {
     };
     for (const g of movie) add(g, 'movie_ids');
     for (const g of tv) add(g, 'tv_ids');
-    const list = [...merged.values()];
-    list.sort((a, b) => {
-      const pa = GENRE_PRIORITY.indexOf(a.name);
-      const pb = GENRE_PRIORITY.indexOf(b.name);
-      if (pa !== -1 || pb !== -1) return (pa === -1 ? 99 : pa) - (pb === -1 ? 99 : pb);
-      return a.name.localeCompare(b.name);
-    });
-    return list;
+    return [...merged.values()];
   });
-  return r.payload;
+  // Add local categories after reading the cache so upgrades expose them immediately.
+  return [...r.payload.filter((g) => !SPECIAL_GENRES.some((s) => s.key === g.key)), ...SPECIAL_GENRES].sort((a, b) => {
+    const pa = GENRE_PRIORITY.indexOf(a.name);
+    const pb = GENRE_PRIORITY.indexOf(b.name);
+    if (pa !== -1 || pb !== -1) return (pa === -1 ? 99 : pa) - (pb === -1 ? 99 : pb);
+    return a.name.localeCompare(b.name);
+  });
 }
 
 // ---- genre rows (Discover default view) ----
@@ -159,13 +189,11 @@ export async function getGenres(): Promise<MergedGenre[]> {
 async function buildGenreRowItems(g: MergedGenre): Promise<BrowseCard[]> {
   const cards: BrowseCard[] = [];
   // vote_count floor keeps obscure junk out of popularity rows.
-  if (g.movie_ids.length > 0) {
-    const page = await tmdb.discover('movie', { with_genres: g.movie_ids.join('|'), sort_by: 'popularity.desc', 'vote_count.gte': '50' });
-    cards.push(...page.results.map((e) => toCard(e, 'movie')));
-  }
-  if (g.tv_ids.length > 0) {
-    const page = await tmdb.discover('tv', { with_genres: g.tv_ids.join('|'), sort_by: 'popularity.desc', 'vote_count.gte': '50' });
-    cards.push(...page.results.map((e) => toCard(e, 'tv')));
+  for (const mt of ['movie', 'tv'] as const) {
+    for (const params of genreDiscoverParams(mt, [g.key], [g])) {
+      const page = await tmdb.discover(mt, { ...params, sort_by: 'popularity.desc', 'vote_count.gte': '50' });
+      cards.push(...page.results.map((e) => toCard(e, mt)));
+    }
   }
   cards.sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0));
   return cards.slice(0, 20);
@@ -191,46 +219,44 @@ export interface BrowseFilters {
   type: 'movie' | 'tv' | 'both';
   genres: string[]; // merged genre keys
   watch: 'any' | 'my' | 'streaming' | 'broadcast';
+  excludedProviders?: number[];
   status: '' | 'returning' | 'ended' | 'canceled';
   library: '' | 'not_added' | 'saved' | 'wishlist' | 'watching' | 'watched' | 'dropped';
   yearMin: number | null;
   yearMax: number | null;
   rating: number | null;
   bingeable: boolean;
+  preferEnglish?: boolean;
+  includeAdaptations?: boolean;
   sort: 'newest' | 'rating' | 'popular' | 'az' | 'added' | 'watched';
 }
 
 const TV_STATUS_PARAM = { returning: '0', ended: '3', canceled: '4' } as const;
 
-/** TMDB param set for one media type, or null when this type can't match (e.g. broadcast + movies). */
-function buildDiscoverParams(mt: 'movie' | 'tv', f: BrowseFilters, genres: MergedGenre[]): Record<string, string> | null {
+/** TMDB query branches for one media type, empty when this type cannot match. */
+async function buildDiscoverParams(mt: 'movie' | 'tv', f: BrowseFilters, genres: MergedGenre[]): Promise<Record<string, string>[]> {
   const p: Record<string, string> = {};
   const region = getSetting('region');
 
-  if (f.genres.length > 0) {
-    const ids = f.genres.flatMap((k) => genres.find((g) => g.key === k)?.[mt === 'movie' ? 'movie_ids' : 'tv_ids'] ?? []);
-    if (ids.length === 0) return null; // selected genres exist only for the other media type
-    p.with_genres = ids.join('|'); // pipe = OR across selected genres
-  }
-
-  if (f.watch === 'my') {
-    const prov = [...enabledServiceIds()];
-    if (prov.length === 0) return null; // no services picked yet
+  const prov = await discoveryProviderIds(f.excludedProviders ?? [], f.watch === 'my');
+  if (prov?.length === 0) return [];
+  if (prov) {
     p.with_watch_providers = prov.join('|');
     p.watch_region = region;
     p.with_watch_monetization_types = 'flatrate|free|ads';
   } else if (f.watch === 'streaming') {
     p.watch_region = region;
     p.with_watch_monetization_types = 'flatrate|free|ads';
-  } else if (f.watch === 'broadcast') {
-    if (mt !== 'tv') return null;
+  }
+  if (f.watch === 'broadcast') {
+    if (mt !== 'tv') return [];
     const networks = getSetting('broadcast_networks').split(/[|,\s]+/).filter(Boolean);
-    if (networks.length === 0) return null;
+    if (networks.length === 0) return [];
     p.with_networks = networks.join('|');
   }
 
   if (f.status) {
-    if (mt !== 'tv') return null; // series status is TV-only
+    if (mt !== 'tv') return []; // series status is TV-only
     p.with_status = TV_STATUS_PARAM[f.status];
   }
 
@@ -254,7 +280,7 @@ function buildDiscoverParams(mt: 'movie' | 'tv', f: BrowseFilters, genres: Merge
     : 'popularity.desc';
   if (f.sort === 'rating') p['vote_count.gte'] = '200';
 
-  return p;
+  return genreDiscoverParams(mt, f.genres, genres).map((params) => ({ ...p, ...params }));
 }
 
 function sortCards(cards: BrowseCard[], sort: BrowseFilters['sort']): BrowseCard[] {
@@ -271,6 +297,7 @@ export interface GridResult {
   page: number;
   total_pages: number;
   stale: boolean;
+  notice?: string;
 }
 
 /**
@@ -288,26 +315,59 @@ export async function discoverGrid(f: BrowseFilters, page: number): Promise<Grid
   let totalPages = 0;
   let stale = false;
   for (const mt of types) {
-    const params = buildDiscoverParams(mt, f, genres);
-    if (!params) continue;
-    const key = `browse_grid:${mt}:p${page}:${stableParams(params)}`;
-    const r = await cachedFetch(key, DAY, () => tmdb.discover(mt, { ...params, page: String(page) }));
-    if (page === 1) recordQuery(key, 'grid', { mediaType: mt, params });
-    stale ||= r.stale;
-    cards.push(...r.payload.results.map((e) => toCard(e, mt)));
-    totalPages = Math.max(totalPages, r.payload.total_pages);
+    for (const params of await buildDiscoverParams(mt, f, genres)) {
+      const key = `browse_grid:${mt}:p${page}:${stableParams(params)}`;
+      const r = await cachedFetch(key, DAY, () => tmdb.discover(mt, { ...params, page: String(page) }));
+      if (page === 1) recordQuery(key, 'grid', { mediaType: mt, params });
+      stale ||= r.stale;
+      cards.push(...r.payload.results.map((e) => toCard(e, mt)));
+      totalPages = Math.max(totalPages, r.payload.total_pages);
+    }
   }
 
+  const supplements = new Set<string>();
+  let notice: string | undefined;
+  if (page === 1 && f.includeAdaptations) {
+    const versions = await loadEnglishVersions(f.genres, types, true);
+    if (versions.incomplete) notice = 'Some English-version details could not be refreshed. Results may be incomplete or use cached details.';
+    for (const version of versions.entries) {
+      const params = (await buildDiscoverParams(version.media_type, { ...f, genres: [] }, genres))[0];
+      if (!params || !versionMatchesParams(version, params)) continue;
+      const key = `${version.media_type}:${version.entry.id}`;
+      if (cards.some((card) => `${card.media_type}:${card.tmdb_id}` === key)) continue;
+      cards.push(toCard(version.entry, version.media_type));
+      supplements.add(key);
+    }
+  }
+
+  cards = [...new Map(cards.map((c) => [`${c.media_type}:${c.tmdb_id}`, c])).values()];
   attachLibrary(cards);
   if (f.library === 'not_added') cards = cards.filter((c) => c.library_id === null);
   else if (f.library) cards = cards.filter((c) => c.user_status === f.library);
 
   const sorted = sortCards(cards, f.sort);
-  const items = await enrichCardsWithOffers(sorted, {
+  let items = await enrichCardsWithOffers(sorted, {
     myServicesOnly: f.watch === 'my',
     includeRentBuy: false,
+    excludedProviderIds: f.excludedProviders,
   });
-  return { items, page, total_pages: Math.min(totalPages, 500), stale };
+  // Verify actual offers too, including supplemental adaptations and stale Discover matches.
+  if (items.some((card) => card.availability_check.status === 'unavailable')) {
+    notice = [notice, 'Some availability checks failed. Results may be incomplete; try refreshing availability.'].filter(Boolean).join(' ');
+  }
+  if (items.some((card) => card.availability_check.status === 'stale')) {
+    notice = [notice, 'Some service offers are cached and may have changed.'].filter(Boolean).join(' ');
+  }
+  if (f.excludedProviders?.length) items = items.filter((card) => card.offers.length > 0);
+  // Provider restrictions for explicit catalog titles cannot be delegated to Discover.
+  if (f.watch === 'my' || f.watch === 'streaming') {
+    items = items.filter((card) => !supplements.has(`${card.media_type}:${card.tmdb_id}`) || card.offers.length > 0);
+  }
+  if (f.preferEnglish) {
+    items.sort((a, b) => Number(knownEnglish(b.english_version)) - Number(knownEnglish(a.english_version)));
+  }
+  if (items.length > 0) totalPages = Math.max(totalPages, 1);
+  return { items, page, total_pages: Math.min(totalPages, 500), stale, notice };
 }
 
 export async function similarTitles(
@@ -346,23 +406,38 @@ export async function libraryGrid(f: BrowseFilters): Promise<BrowseCard[]> {
     // Match against the stored TMDB genre-name json; resolve merged keys to
     // their member names. Offline with a cold genre cache, fall back to a
     // loose LIKE built from the key itself.
-    const genres = await getGenres().catch(() => [] as MergedGenre[]);
-    const patterns = f.genres.flatMap((k) => {
-      const names = genres.find((g) => g.key === k)?.names;
-      return names?.length ? names.map((n) => `%"${n}"%`) : [`%${k.replace(/-/g, '%')}%`];
+    const genres = await getGenres().catch(() => SPECIAL_GENRES);
+    const clauses = f.genres.map((k) => {
+      const genre = genres.find((g) => g.key === k);
+      const patterns = genre?.names.length ? genre.names.map((n) => `%"${n}"%`) : [`%${k.replace(/-/g, '%')}%`];
+      let clause = `(${patterns.map(() => 't.genres LIKE ?').join(' OR ')})`;
+      args.push(...patterns);
+      if (genre?.original_language) {
+        clause += ' AND t.original_language = ?';
+        args.push(genre.original_language);
+        if (genre.movie_ids.length === 0) clause += " AND t.media_type = 'tv'";
+      }
+      if (f.includeAdaptations) {
+        const adaptations = (['movie', 'tv'] as const).flatMap((mt) => {
+          const ids = adaptationIds(k, mt);
+          if (ids.length === 0) return [];
+          args.push(mt, ...ids);
+          return [`(t.media_type = ? AND t.tmdb_id IN (${ids.map(() => '?').join(',')}))`];
+        });
+        if (adaptations.length) clause = `(${clause}) OR ${adaptations.join(' OR ')}`;
+      }
+      return `(${clause})`;
     });
-    where.push(`(${patterns.map(() => 't.genres LIKE ?').join(' OR ')})`);
-    args.push(...patterns);
+    where.push(`(${clauses.join(' OR ')})`);
   }
 
-  if (f.watch === 'my') {
-    where.push(`EXISTS (
-      SELECT 1 FROM availability a JOIN my_services m ON m.provider_id = a.provider_id AND m.enabled = 1
-      WHERE a.title_id = t.id AND a.active = 1 AND a.offer_type IN ('flatrate','free','ads'))`);
-  } else if (f.watch === 'streaming') {
+  if (f.watch === 'my' || f.watch === 'streaming' || f.excludedProviders?.length) {
     where.push(`EXISTS (
       SELECT 1 FROM availability a
-      WHERE a.title_id = t.id AND a.active = 1 AND a.offer_type IN ('flatrate','free','ads'))`);
+      ${f.watch === 'my' ? 'JOIN my_services m ON m.provider_id = a.provider_id AND m.enabled = 1' : ''}
+      WHERE a.title_id = t.id AND a.active = 1 AND a.region = ? AND a.offer_type IN ('flatrate','free','ads')
+      ${f.excludedProviders?.length ? `AND a.provider_id NOT IN (${f.excludedProviders.map(() => '?').join(',')})` : ''})`);
+    args.push(getSetting('region'), ...(f.excludedProviders ?? []));
   }
   // watch === 'broadcast' is ignored here: networks aren't stored locally, so
   // the option is hidden in Library scope on the client.
@@ -407,15 +482,18 @@ export async function libraryGrid(f: BrowseFilters): Promise<BrowseCard[]> {
   const rows = db
     .prepare(`
       SELECT t.id AS library_id, t.tmdb_id, t.media_type, t.name, t.year, t.poster_path,
-             t.tmdb_rating, t.overview, us.status AS user_status
+             t.tmdb_rating, t.overview, t.original_language, us.status AS user_status
       FROM titles t
       JOIN user_state us ON us.title_id = t.id
       ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
       ORDER BY ${orderBy}
     `)
-    .all(...args) as (Omit<BrowseCard, 'date' | 'popularity'>)[];
+    .all(...args) as (Omit<BrowseCard, 'date' | 'popularity'> & { original_language: string | null })[];
 
-  return rows.map((r) => ({ ...r, date: r.year ? String(r.year) : null, popularity: null }));
+  const cards = rows.map((r) => ({ ...r, date: r.year ? String(r.year) : null, popularity: null,
+    english_version: englishVersion(r.media_type, r.tmdb_id, r.original_language) }));
+  if (f.preferEnglish) cards.sort((a, b) => Number(knownEnglish(b.english_version)) - Number(knownEnglish(a.english_version)));
+  return cards;
 }
 
 // ---- daily sync hook ----

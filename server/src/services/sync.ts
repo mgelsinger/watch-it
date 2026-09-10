@@ -9,6 +9,11 @@ import { enabledServiceIds } from './availability.js';
 import { ensureReleaseDates } from './releaseDates.js';
 import { refreshBrowseCaches } from './browse.js';
 import { pruneDisposableData } from './cleanup.js';
+import { singleFlight } from '../singleFlight.js';
+import { runMaintenance } from './maintenance.js';
+
+let stopping = false;
+const cronTasks: ReturnType<typeof cron.schedule>[] = [];
 
 // ---- in-memory progress, exposed at /api/sync/status ----
 
@@ -47,6 +52,7 @@ function logFinish(id: number, ok: boolean, error?: string): void {
 
 /** Run a scoped job with sync_log bookkeeping. Errors are logged, never thrown. */
 async function scoped(source: string, scope: string, fn: () => Promise<void>): Promise<void> {
+  if (stopping) return;
   const logId = logStart(source, scope);
   try {
     await fn();
@@ -72,6 +78,7 @@ function trackedTitleIds(where: string): number[] {
 async function eachTitle(ids: number[], fn: (id: number) => Promise<void>): Promise<void> {
   syncState.total += ids.length;
   for (const id of ids) {
+    if (stopping) break;
     try {
       await fn(id);
     } catch (err) {
@@ -111,30 +118,32 @@ export async function refreshDiscoveryLists(force = false): Promise<void> {
   const keys = discoveryCacheKeys();
   const today = localToday();
   const providerIds = [...enabledServiceIds()];
+  return singleFlight(`discovery-lists:${keys.movies}:${keys.tv}:${keys.disc}`, async () => {
 
-  if (providerIds.length > 0) {
-    const from = localToday(-NEW_ON_SERVICES_DAYS);
-    if (force || !cacheGet(keys.movies, DAY)?.fresh) {
-      cacheSet(keys.movies, await tmdb.discoverNewMoviesOnServices(region, providerIds, from, today));
-    }
-    if (force || !cacheGet(keys.tv, DAY)?.fresh) {
-      cacheSet(keys.tv, await tmdb.discoverNewTvOnServices(region, providerIds, from, today));
-    }
-  }
-
-  if (force || !cacheGet(keys.disc, DAY)?.fresh) {
-    const movies = await tmdb.discoverDiscAndDigital(region, localToday(-DISC_DIGITAL_DAYS), today);
-    cacheSet(keys.disc, movies);
-    // Digital/Blu-ray badges need per-movie release dates; ensure* refetches at
-    // most weekly per movie, so this stays cheap across daily runs.
-    for (const m of movies.slice(0, DISC_ROW_LIMIT)) {
-      try {
-        await ensureReleaseDates(m.id, region);
-      } catch (err) {
-        console.warn(`[sync] release dates for tmdb:${m.id} failed:`, (err as Error).message);
+    if (providerIds.length > 0) {
+      const from = localToday(-NEW_ON_SERVICES_DAYS);
+      if (force || !cacheGet(keys.movies, DAY)?.fresh) {
+        cacheSet(keys.movies, await tmdb.discoverNewMoviesOnServices(region, providerIds, from, today));
+      }
+      if (force || !cacheGet(keys.tv, DAY)?.fresh) {
+        cacheSet(keys.tv, await tmdb.discoverNewTvOnServices(region, providerIds, from, today));
       }
     }
-  }
+
+    if (force || !cacheGet(keys.disc, DAY)?.fresh) {
+      const movies = await tmdb.discoverDiscAndDigital(region, localToday(-DISC_DIGITAL_DAYS), today);
+      cacheSet(keys.disc, movies);
+      // Digital/Blu-ray badges need per-movie release dates; ensure* refetches at
+      // most weekly per movie, so this stays cheap across daily runs.
+      for (const m of movies.slice(0, DISC_ROW_LIMIT)) {
+        try {
+          await ensureReleaseDates(m.id, region);
+        } catch (err) {
+          console.warn(`[sync] release dates for tmdb:${m.id} failed:`, (err as Error).message);
+        }
+      }
+    }
+  });
 }
 
 export async function refreshTvmazeSchedule(date: string, force = false): Promise<unknown> {
@@ -180,10 +189,12 @@ export async function runHourly(): Promise<void> {
 
 /** Daily (~4am): metadata for non-ended titles, providers for everything tracked, discovery rows. */
 export async function runDaily(): Promise<void> {
+  if (stopping) return;
+  await scoped('local', 'daily:maintenance', async () => runMaintenance());
   if (tmdb.tmdbConfigured()) {
     await scoped('tmdb', 'daily:metadata', async () => {
       const ids = trackedTitleIds(
-        "us.status NOT IN ('dropped') AND (t.status_upstream IS NULL OR t.status_upstream NOT IN ('Ended','Canceled'))",
+        "t.original_language IS NULL OR (us.status NOT IN ('dropped') AND (t.status_upstream IS NULL OR t.status_upstream NOT IN ('Ended','Canceled')))",
       );
       await eachTitle(ids, refreshTitle);
     });
@@ -235,7 +246,7 @@ export async function runWeekly(): Promise<void> {
 // ---- manual + scheduling ----
 
 async function withState(scope: string, fn: () => Promise<void>): Promise<void> {
-  if (syncState.running) return;
+  if (stopping || syncState.running) return;
   syncState.running = true;
   syncState.scope = scope;
   syncState.done = 0;
@@ -243,7 +254,7 @@ async function withState(scope: string, fn: () => Promise<void>): Promise<void> 
   syncState.startedAt = nowIso();
   syncState.lastError = null;
   try {
-    await fn();
+    await singleFlight('sync:active', fn);
   } finally {
     syncState.running = false;
     syncState.scope = null;
@@ -252,11 +263,11 @@ async function withState(scope: string, fn: () => Promise<void>): Promise<void> 
 }
 
 export function kickGlobalRefresh(): boolean {
-  if (syncState.running) return false;
+  if (stopping || syncState.running) return false;
   void withState('manual:global', async () => {
     await runDaily();
     await runHourly();
-  });
+  }).catch(() => { syncState.lastError = 'Refresh failed'; });
   return true;
 }
 
@@ -265,8 +276,17 @@ export async function refreshOneTitle(titleId: number): Promise<void> {
 }
 
 export function startCron(): void {
-  cron.schedule('5 * * * *', () => void withState('cron:hourly', runHourly));
-  cron.schedule('0 4 * * *', () => void withState('cron:daily', runDaily));
-  cron.schedule('30 4 * * 0', () => void withState('cron:weekly', runWeekly));
+  if (cronTasks.length) return;
+  stopping = false;
+  cronTasks.push(
+    cron.schedule('5 * * * *', () => withState('cron:hourly', runHourly)),
+    cron.schedule('0 4 * * *', () => withState('cron:daily', runDaily)),
+    cron.schedule('30 4 * * 0', () => withState('cron:weekly', runWeekly)),
+  );
   console.log('[sync] cron scheduled (hourly :05, daily 04:00, weekly Sun 04:30)');
+}
+
+export async function stopCron(): Promise<void> {
+  stopping = true;
+  await Promise.all(cronTasks.splice(0).map((task) => task.destroy()));
 }

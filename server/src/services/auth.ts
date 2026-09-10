@@ -1,8 +1,20 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import type { DB } from '../db.js';
 
 export const SESSION_COOKIE = 'watch_it_session';
 export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+
+/** Rotating or disabling the installation password revokes previous sessions. */
+export function reconcileCredentials(db: DB, password: string): void {
+  const prior = db.prepare('SELECT salt, password_digest FROM auth_configuration WHERE id = 1').get() as { salt: string; password_digest: string } | undefined;
+  const salt = prior?.salt ?? randomBytes(32).toString('hex');
+  const hash = scryptSync(password, salt, 32).toString('hex');
+  if (prior?.password_digest === hash) return;
+  db.transaction(() => {
+    db.prepare('DELETE FROM auth_sessions').run();
+    db.prepare('INSERT OR REPLACE INTO auth_configuration (id, salt, password_digest) VALUES (1, ?, ?)').run(salt, hash);
+  })();
+}
 
 function digest(value: string): Buffer {
   return createHash('sha256').update(value).digest();

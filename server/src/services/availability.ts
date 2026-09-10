@@ -2,6 +2,7 @@ import { getDb, getSetting } from '../db.js';
 import { nowIso } from '../config.js';
 import type { RegionOffers } from '../sources/tmdb.js';
 import { emitEvent } from './events.js';
+import { watchUrl } from './providers.js';
 
 const OFFER_TYPES = ['flatrate', 'rent', 'buy', 'free', 'ads'] as const;
 type OfferType = (typeof OFFER_TYPES)[number];
@@ -66,6 +67,8 @@ export function applyProviders(
   const hasFreshHomeOffer = fresh.size > 0;
 
   const apply = db.transaction(() => {
+    db.prepare('INSERT OR REPLACE INTO provider_checks (title_id, region, checked_at, watch_url) VALUES (?, ?, ?, ?)')
+      .run(titleId, region, now, watchUrl(offers.link));
     for (const [key, offer] of fresh) {
       const row = existingByKey.get(key);
       const isNewlyAvailable = !row || row.active === 0;

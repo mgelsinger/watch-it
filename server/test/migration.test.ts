@@ -34,6 +34,8 @@ test('migrations preserve active data while removing obsolete state', () => {
   db.exec(fs.readFileSync(path.join(migrations, '007_saved_for_later.sql'), 'utf8'));
   db.exec(fs.readFileSync(path.join(migrations, '008_auth_sessions.sql'), 'utf8'));
   db.exec(fs.readFileSync(path.join(migrations, '009_remove_obsolete_state.sql'), 'utf8'));
+  db.exec(fs.readFileSync(path.join(migrations, '010_original_language.sql'), 'utf8'));
+  assert.deepEqual(db.prepare('SELECT original_language FROM titles WHERE id = ?').get(titleId), { original_language: null });
 
   const log = db.prepare('SELECT title_id, tmdb_id, media_type, action FROM suggestion_log').get() as Record<string, unknown>;
   assert.deepEqual(log, { title_id: titleId, tmdb_id: 101, media_type: 'movie', action: 'skipped' });
