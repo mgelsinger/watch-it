@@ -38,7 +38,7 @@ test('first-use key fields, 45-minute pick, preview, watch options, save, and ep
   await expect(page.getByRole('alert')).toContainText('32-character');
   await page.getByLabel('TMDB API key', { exact: true }).fill('a'.repeat(32));
   await page.getByRole('button', { name: 'Verify and save TMDB key' }).click();
-  await expect(page.getByRole('status')).toContainText('verified and saved');
+  await expect(page.getByRole('status').filter({ hasText: 'TMDB API key verified and saved. It works immediately.' })).toBeVisible();
   await expect(page.getByLabel('TMDB API key', { exact: true })).toHaveValue('');
   await page.getByLabel('Watch-provider region').selectOption('US');
   await page.getByRole('link', { name: 'Pick For Me', exact: true }).click();
