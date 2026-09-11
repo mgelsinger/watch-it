@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-11T15:19:03.932Z",
+  "captured_at": "2026-09-11T19:21:03.462Z",
   "data": "Disposable sample library; live TMDB metadata and artwork.",
   "screenshots": [
     {
@@ -19,36 +19,39 @@
       }
     },
     {
-      "file": "title.png",
-      "route": "/title/1",
-      "viewport": {
-        "width": 1200,
-        "height": 900
-      }
-    },
-    {
-      "file": "pick.png",
-      "route": "/pick",
-      "viewport": {
-        "width": 1200,
-        "height": 900
-      }
-    },
-    {
-      "file": "recommendation.png",
-      "route": "/pick",
-      "viewport": {
-        "width": 1200,
-        "height": 900
-      }
-    },
-    {
       "file": "mobile.png",
       "route": "/library",
       "viewport": {
         "width": 390,
         "height": 844
       }
+    },
+    {
+      "file": "title.png",
+      "route": "/title/1",
+      "viewport": {
+        "width": 1200,
+        "height": 1400
+      },
+      "captured_at": "2026-09-11T19:15:35.630Z"
+    },
+    {
+      "file": "pick.png",
+      "route": "/pick",
+      "viewport": {
+        "width": 1200,
+        "height": 1100
+      },
+      "captured_at": "2026-09-11T19:21:05.402Z"
+    },
+    {
+      "file": "recommendation.png",
+      "route": "/pick",
+      "viewport": {
+        "width": 1200,
+        "height": 1100
+      },
+      "captured_at": "2026-09-11T19:21:05.884Z"
     }
   ]
 }

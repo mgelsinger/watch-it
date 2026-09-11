@@ -22,4 +22,6 @@ The report at `artifacts/container-audit.json` includes scanner descriptions, in
 
 ## Release policy
 
+September 11 community-candidate refresh: the scanner reports the same 13 medium and 7 low entries plus `CVE-2026-89092` with unknown severity for `libc6`. The advisory describes nscd processing malicious DNS responses. Inspection of the candidate confirmed no `/usr/sbin/nscd` binary or `/var/run/nscd/socket`; the application runs Node, not an nscd service. Retain the entry in the report and track vendor classification/fixes rather than treating unknown severity as zero risk. This observation is scoped to the shipped container, not the Docker host or a future modified image. Upstream advisory: [GLIBC-SA-2026-0016](https://sourceware.org/git/?p=glibc.git;a=blob_plain;f=advisories/GLIBC-SA-2026-0016). The existing review deadline still applies.
+
 `npm run audit:release` fails on any application dependency advisory. `node scripts/scan-image.mjs IMAGE` scans the exact image archive, rejects every high/critical finding, and requires a current reviewed entry for medium findings. Run both again for the final candidate. A clean audit alone is not a security guarantee.

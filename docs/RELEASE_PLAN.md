@@ -1,5 +1,7 @@
 # Self-install release: technical implementation plan
 
+The later community-launch phase is recorded in [COMMUNITY_LAUNCH.md](COMMUNITY_LAUNCH.md). Its hosted-beta work remains a [proposal](HOSTED_BETA.md).
+
 Status: implementation completed September 10, 2026. Local release-candidate verification is recorded in [RELEASE_VERIFICATION.md](RELEASE_VERIFICATION.md). Distribution still needs the owner's code-license and private security-contact decisions, followed by the configured GitHub release checks.
 
 September 11 public-preparation work adds a screenshot README, first-install guide, correct environment-update instructions, and a complete installation ZIP tested from its extracted files in CI. See [PUBLIC_READINESS.md](PUBLIC_READINESS.md) for the evaluation, evidence, and remaining publication decisions.

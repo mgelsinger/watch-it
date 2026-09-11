@@ -1,14 +1,16 @@
 # watch-it
 
-**Find your next watch. Remember where you left off.**
+**Find your next watch and keep your place.**
 
-A personal home for movies and TV, across your streaming services. Find something for tonight, keep a watchlist, and pick up at the next episode.
+A home for people who watch movies and TV across streaming subscriptions and lose time deciding what to watch or remembering their next episode. Tell **Pick For Me** how much time you have, choose your services and a mood, then save a suggestion and track your progress.
 
-Run it on your own computer or home server. Your library stays in your installation, with no watch-it account or telemetry. Metadata and streaming availability come from external providers; playback opens on your streaming service.
+**No video files needed.** Watch It does not host, play or download video. Watch options opens TMDB's regional provider listing; follow a service link there to watch with your own subscription. You never give Watch It your streaming-service passwords.
 
-![watch-it's sample library, with movies and shows, viewing status, posters, and streaming services](docs/images/library.png)
+Run it on your computer or home server using Docker and your own TMDB API key, which you paste into **Settings > API keys**. OMDb ratings are optional. **Each installation has one shared library**, including progress and settings. The optional installation password protects access; it does not create separate accounts or private libraries.
 
-[Get started](#get-started) · [Take a look](#take-a-look) · [Installation help](docs/INSTALL.md) · [Backups and updates](docs/OPERATIONS.md) · [Report a bug](https://github.com/mgelsinger/watch-it/issues)
+![Pick For Me: a recommendation with listed runtime, reasons, regional watch options and a Watchlist action](docs/images/recommendation.png)
+
+[Get started](#get-started) · [Try a sample](#try-a-sample-before-installing) · [Take a look](#take-a-look) · [Installation help](docs/INSTALL.md) · [Backups and updates](docs/OPERATIONS.md)
 
 ## What you can do
 
@@ -22,9 +24,19 @@ Run it on your own computer or home server. Your library stays in your installat
 
 ### Find something for tonight
 
-Set your time, choose a mood, and decide which services to include.
+“I have 45 minutes, these subscriptions, and want something light.”
 
-![A live Pick For Me result with runtime, streaming options, and actions to save or shuffle](docs/images/recommendation.png)
+1. Choose **45 min**, **TV show** or **Either**, and **Light / comedy**.
+2. Open **Choose your streaming services**, select your subscriptions, and keep **Only show services I already use** checked. Check your country in Settings.
+3. Request a pick. **Why this fits** explains the listed runtime, catalog genre and regional service offer. Comedy is a genre filter, so tone can vary. Unknown runtimes are skipped when you set a time limit; TV episodes can vary in length.
+4. Open **Watch options on TMDB** to find provider links, or preview details without adding the title. Confirm availability, plan and audio on the service.
+5. **Add to Watchlist**, or **Save for Later**, then find the title in **Library**. Mark episodes watched to keep your place. Shuffle if the suggestion does not appeal.
+
+Recommendations use a limited catalog sample and simple ranking, not a promise of the best match. Missing offers or runtime data can mean no result; the app offers explicit filter changes without silently broadening your subscriptions. [Filter details](docs/CATALOG.md).
+
+### Your library and progress
+
+![A populated sample library, with saved movies, shows in progress and streaming services](docs/images/library.png)
 
 ### Explore beyond your watchlist
 
@@ -44,6 +56,12 @@ Browse a full genre catalog, including anime and Korean dramas, then refine it w
 </details>
 
 Screenshots use a separate sample library and live TMDB artwork. Watch history is illustrative. Availability depends on your region and when you check; screenshots are not a current service listing. [Screenshot details and credits](docs/SCREENSHOTS.md).
+
+## Try a sample before installing
+
+[Download the standalone sample demo](https://github.com/mgelsinger/watch-it/raw/refs/heads/main/web/public/demo/index.html) and open the HTML file in a browser. No Docker, key or account is needed. You can choose services and time, view a sample recommendation, save it, and mark sample episodes watched. An installed app also serves it at `/demo/`.
+
+Titles, artwork, availability and progress in this demo are fictional. It makes no API calls, uses temporary browser memory, and never reads or changes a personal library. It demonstrates the workflow, not live recommendation quality. A public hosted demo URL has not been published. [Demo scope and hosting option](docs/DEMO.md).
 
 ## Get started
 
@@ -77,7 +95,7 @@ The verified container platform is **Linux x86-64**, including Docker Desktop on
    cp .env.example .env
    ```
 
-3. **Open `.env` in a text editor.** Paste your key after `TMDB_API_KEY=` and save. Leave OMDb blank to start; it is optional.
+3. **Leave the template defaults for local setup.** You will paste your key into the app after it starts. No configuration-file editing is needed for API keys.
 
 4. **Build and start the app:**
 
@@ -87,13 +105,15 @@ The verified container platform is **Linux x86-64**, including Docker Desktop on
 
    The first build downloads dependencies. When it finishes, open **[localhost:8300](http://localhost:8300)**.
 
-In **Settings**, test TMDB, choose your country under **Watch-provider region**, and select any streaming services you use. Open **Pick For Me** or **Browse** to find your first title. You can start with an empty library.
+In **Settings > API keys > TMDB API key**, paste your key and select **Verify and save TMDB key**. It works immediately. Choose your country under **Watch-provider region**, then open **Pick For Me** and choose your streaming services. Start with an empty library or try the sample demo first. OMDb can be skipped.
 
 [Full installation guide, key setup, and troubleshooting](docs/INSTALL.md). A downloaded release, when available, includes a prebuilt image and its setup files so you can skip the build.
 
 ## A few useful answers
 
 **Does watch-it play or download videos?** No. It helps you discover and track titles, then opens watch options for your region. Streaming subscriptions are separate.
+
+**Can several people have private libraries?** Not yet. Everyone with access to an installation shares its library, progress, credentials and settings. A hosted community beta with individual accounts is [proposed](docs/HOSTED_BETA.md), not implemented.
 
 **Do I need OMDb?** No. TMDB supplies discovery, posters, and its own ratings. An optional OMDb key adds IMDb, Rotten Tomatoes, and Metacritic scores where available.
 
@@ -107,7 +127,7 @@ In **Settings**, test TMDB, choose your country under **Watch-provider region**,
 
 TypeScript, React, Vite, Fastify, and SQLite. One Node process serves the built app and API.
 
-Use **Node 22.12 or newer within Node 22**, configure `.env`, and run `npm ci`. Start `npm run dev:server` and `npm run dev:web` in separate terminals, then open http://localhost:5173. Port 8300 must be free for the development API.
+Use **Node 22.12 or newer within Node 22** and run `npm ci`. Start `npm run dev:server` and `npm run dev:web` in separate terminals, then open http://localhost:5173. Paste your TMDB key in Settings or use the supported `.env` configuration. Port 8300 must be free for the development API.
 
 ```sh
 npm run typecheck

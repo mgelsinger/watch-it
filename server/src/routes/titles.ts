@@ -27,7 +27,7 @@ export async function titleRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Querystring: { q?: string } }>('/api/search', async (req, reply) => {
     const q = (req.query.q ?? '').trim();
     if (!q) return { results: [] };
-    if (!tmdb.tmdbConfigured()) return reply.code(503).send({ error: 'TMDB API key is not configured' });
+    if (!tmdb.tmdbConfigured()) return reply.code(503).send({ error: 'Add your TMDB API key in Settings > API keys to search for titles.' });
     const raw = await tmdb.searchMulti(q);
     const db = getDb();
     const inLib = db.prepare(`

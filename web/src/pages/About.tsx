@@ -5,7 +5,8 @@ export default function About() {
   const health = useApi<{ version: string }>('/api/health');
   return <article className="about-page">
     <h1>About watch-it</h1>
-    <p>A single-user app you install and control. {health.data && `Version ${health.data.version}.`}</p>
+    <p>Find your next watch and keep your place. Discover movies and TV across your streaming subscriptions, save a watchlist, and track episode progress. No video files needed. Watch It does not host, download or play video; playback happens on the streaming service you choose. {health.data && `Version ${health.data.version}.`}</p>
+    <p>Self-hosted, with one shared library per installation. The optional password protects access to that shared library; it does not create separate accounts. Docker and your own TMDB API key are required for the documented setup. Paste the key in <Link to="/settings">Settings</Link>. OMDb ratings are optional; streaming-service passwords are never needed.</p>
     <h2>Credits</h2>
     <a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer"><img src="/tmdb-logo.svg" alt="TMDB" width="100" /></a>
     <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>

@@ -4,13 +4,13 @@ watch-it is a single-user installation. The release target is Linux containers o
 
 ## First installation
 
-For prerequisites, getting the key, source ZIP setup, and troubleshooting, start with the [installation guide](INSTALL.md). Copy `.env.example` to `.env` (`Copy-Item .env.example .env` in PowerShell), add your TMDB key, then run:
+For prerequisites, getting the key, source ZIP setup, and troubleshooting, start with the [installation guide](INSTALL.md). Copy `.env.example` to `.env` (`Copy-Item .env.example .env` in PowerShell), keep its defaults for local setup, then run:
 
 ```sh
 docker compose up -d --build
 ```
 
-Open http://localhost:8300, visit Settings, test the key, choose a region, and optionally select subscribed services. These services are separate from per-search exclusions. To apply a changed `.env`, run `docker compose up -d --no-build` from the installation folder. A container restart alone does not apply environment changes; your library stays intact.
+Open http://localhost:8300, visit Settings > API keys, paste your TMDB API key and choose Verify and save TMDB key. It works immediately. Choose a region, then select subscriptions in Settings or Pick For Me. These services are separate from per-search exclusions. To apply a changed `.env`, run `docker compose up -d --no-build` from the installation folder. A container restart alone does not apply environment changes; your library stays intact.
 
 The Docker port binds to `127.0.0.1` by default. Native startup also defaults to localhost through `HOST`. To allow trusted LAN clients, set `BIND_ADDRESS` to the host's LAN address. Set `WATCH_IT_PASSWORD` to a unique password of at least 12 characters if other people can reach the installation. Require a password and HTTPS before exposing it to untrusted networks. `WATCH_IT_SECURE_COOKIE=true` is for HTTPS only. Keep forwarded headers untrusted unless an exact proxy address or CIDR is configured in `WATCH_IT_TRUSTED_PROXIES`.
 
@@ -18,7 +18,7 @@ The runtime runs as UID/GID 1000 with restricted data permissions. It contains N
 
 ## Install a downloaded release
 
-Download the versioned installation ZIP and `checksums.txt` from the release, verify the ZIP checksum, and extract it. The ZIP contains the tested image archive, Compose configuration pinned to that version, a blank `.env.example`, `START_HERE.md`, and the operating guides. It includes no source-build requirement. Create `.env` and add your key, then use the version shown in that release's notes. For version 1.0.0:
+Download the versioned installation ZIP and `checksums.txt` from the release, verify the ZIP checksum, and extract it. The ZIP contains the tested image archive, Compose configuration pinned to that version, a blank `.env.example`, `START_HERE.md`, and the operating guides. It includes no source-build requirement. Copy `.env.example` to `.env`, then use the version shown in that release's notes. Enter your key in Settings after startup. For version 1.0.0:
 
 ```sh
 docker load --input watch-it-1.0.0-linux-amd64.tar
@@ -28,7 +28,7 @@ The included `.env.example` already selects `WATCH_IT_IMAGE=watch-it:1.0.0`; run
 
 ## Upgrade an existing installation
 
-1. Export a profile through Settings and keep a copy outside the Docker volume. Keep `.env` separately, since profile exports omit credentials.
+1. Export a profile through Settings and keep a copy outside the Docker volume. Keep `.env` separately. App-entered keys are in `/data/credentials.json`; keep a private copy or re-enter keys after recovery. Profile exports and SQLite snapshots omit this file. Full volume backups include it and must be kept private. Older images use environment keys only, so supply the key in `.env` if rolling back to one.
 2. Record your current image ID with `docker inspect watch-it --format '{{.Image}}'`. Tag that exact image as `watch-it:before-upgrade` with `docker image tag IMAGE_ID watch-it:before-upgrade` before replacing the working image. Do not remove it until recovery has been verified.
 3. Obtain the new source/image. Build it with `docker compose build --pull` if installing from source. Building does not restart the running installation.
 4. Stop the application with `docker compose stop watch-it`. Keep the same Compose project name and named data volume.

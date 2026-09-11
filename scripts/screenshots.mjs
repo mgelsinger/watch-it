@@ -25,7 +25,9 @@ const app = await createApp({ logger: false });
 let browser;
 const output = path.join(root, 'docs/images');
 fs.mkdirSync(output, { recursive: true });
-const captureReport = { captured_at: new Date().toISOString(), data: 'Disposable sample library; live TMDB metadata and artwork.', screenshots: [] };
+const only = process.argv.find((arg) => arg.startsWith('--only='))?.slice(7).split(',');
+const prior = only && fs.existsSync(path.join(output, 'capture.json')) ? JSON.parse(fs.readFileSync(path.join(output, 'capture.json'), 'utf8')) : null;
+const captureReport = { captured_at: new Date().toISOString(), data: 'Disposable sample library; live TMDB metadata and artwork.', screenshots: prior?.screenshots.filter((entry) => !only.includes(entry.file.replace('.png', ''))) ?? [] };
 try {
   await app.listen({ host: '127.0.0.1', port: 0 });
   const origin = `http://127.0.0.1:${app.server.address().port}`;
@@ -64,6 +66,7 @@ try {
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1200, height: 900 }, deviceScaleFactor: 1 });
   async function capture(name, route, ready) {
+    if (only && !only.includes(name)) return;
     if (route !== null) await page.goto(`${origin}${route}`);
     await ready();
     await page.waitForLoadState('networkidle');
@@ -75,17 +78,37 @@ try {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
     if (overflow) throw new Error(`Horizontal overflow in ${name}`);
     await page.screenshot({ path: path.join(output, `${name}.png`), animations: 'disabled' });
-    captureReport.screenshots.push({ file: `${name}.png`, route: route ?? '/pick', viewport: page.viewportSize() });
+    captureReport.screenshots.push({ file: `${name}.png`, route: route ?? '/pick', viewport: page.viewportSize(), captured_at: new Date().toISOString() });
     console.log(`Captured ${name}.png`);
   }
   await capture('library', '/library', () => page.getByText('12 titles', { exact: true }).waitFor());
   await capture('browse', '/browse?genres=anime', () => page.locator('.grid img').first().waitFor({ timeout: 90000 }));
-  await capture('title', `/title/${featuredId}`, () => page.getByRole('heading', { name: /^Severance/ }).waitFor());
-  await capture('pick', '/pick', () => page.getByRole('button', { name: 'Pick For Me', exact: true }).waitFor());
-  await page.getByRole('button', { name: 'No limit', exact: true }).click();
-  await page.getByRole('button', { name: 'Movie', exact: true }).click();
-  await page.getByRole('button', { name: 'Animation', exact: true }).click();
+  if (!only || only.includes('title')) await page.setViewportSize({ width: 1200, height: 1400 });
+  await capture('title', `/title/${featuredId}`, async () => {
+    await page.getByRole('heading', { name: /^Severance/ }).waitFor();
+    const season = page.locator('.season').filter({ has: page.getByText('Season 1', { exact: true }) });
+    if (!await season.getAttribute('open').then((value) => value !== null)) await season.locator('summary').click();
+    await page.evaluate(() => window.scrollTo(0, 0));
+  });
+  await page.setViewportSize({ width: 1200, height: 1100 });
+  // Use the selected sample subscription for a focused comedy demonstration.
+  for (const id of [8, 337]) await request('PUT', '/api/my-services', { provider_id: id, enabled: false });
+  await page.goto(`${origin}/pick`);
+  await page.getByRole('button', { name: '45 min', exact: true }).click();
+  await page.getByRole('button', { name: 'TV show', exact: true }).click();
+  await page.getByRole('button', { name: 'Light / comedy', exact: true }).click();
+  await page.getByLabel('Only show services I already use').check();
+  await capture('pick', null, () => page.getByRole('button', { name: 'Pick For Me', exact: true }).waitFor());
   await page.getByRole('button', { name: 'Pick For Me', exact: true }).click();
+  await page.locator('.pick-title').waitFor({ timeout: 120000 });
+  // Curate by using the real Shuffle control, with the same time/service/genre filters.
+  const sitcoms = /Ted Lasso|Shrinking|Trying|Loot|Platonic|Acapulco|The Studio/;
+  for (let attempt = 0; attempt < 8 && !sitcoms.test(await page.locator('.pick-title').innerText()); attempt++) {
+    const response = page.waitForResponse((response) => response.url().endsWith('/api/pick/next'));
+    await page.getByRole('button', { name: 'Shuffle', exact: true }).click();
+    await response;
+    if (!await page.locator('.pick-title').count()) break;
+  }
   await capture('recommendation', null, () => page.locator('.pick-title').waitFor({ timeout: 120000 }));
   await page.setViewportSize({ width: 390, height: 844 });
   await capture('mobile', '/library', () => page.getByText('12 titles', { exact: true }).waitFor());

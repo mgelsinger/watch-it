@@ -240,7 +240,7 @@ export interface PickConstraints {
   excluded_provider_ids?: number[];
   prefer_english?: boolean;
   include_adaptations?: boolean;
-  /** Minutes; null or >= 120 ("2h+" / "No limit") disables the budget filter. */
+  /** Maximum listed runtime in minutes; only null disables the limit. */
   time: number | null;
   type: 'tv' | 'movie' | 'either';
   genres: string[]; // merged genre keys (mood chips)
@@ -250,6 +250,7 @@ export interface PickConstraints {
 }
 
 export interface PickCandidate {
+  overview?: string | null;
   english_version?: EnglishVersion;
   key: string;
   tmdb_id: number;
@@ -261,6 +262,7 @@ export interface PickCandidate {
   source: 'new_release' | 'airing_now' | 'popular';
   runtime: number;
   runtime_estimated: boolean;
+  runtime_basis?: 'movie' | 'series' | 'first_episode';
   providers: WatchOffer[];
   availability_check?: AvailabilityCheck;
   watch_url?: string | null;

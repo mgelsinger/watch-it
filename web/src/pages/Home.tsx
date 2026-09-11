@@ -36,16 +36,17 @@ export default function Home() {
     <>
       <Link to="/pick" className="pick-cta">
         Pick For Me Tonight
-        <span className="pick-cta-sub">Fresh releases and current shows on your services, picked for tonight.</span>
+        <span className="pick-cta-sub">45 minutes, your services, something light. Find a suggestion and save it.</span>
       </Link>
 
       {totalTracked === 0 && (
         <div className="empty">
-          <h3>Welcome to watch-it</h3>
+          <h3>Find your next watch and keep your place.</h3>
           <p>
-            Nothing tracked yet. Check your API keys in <Link to="/settings"><u>Settings</u></Link>, choose your
+            Discover movies and TV across streaming subscriptions, save titles, and track episodes. No video files needed. Add your TMDB API key in <Link to="/settings"><u>Settings</u></Link>, choose your
             streaming services, then get a recommendation here or search for a title to save.
           </p>
+          <p>Playback happens on your streaming service. This installation has one shared library. <a href="/demo/">Try the sample demo</a>.</p>
         </div>
       )}
 

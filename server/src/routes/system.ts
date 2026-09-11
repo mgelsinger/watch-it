@@ -15,6 +15,7 @@ import { regionalProviders } from '../services/providers.js';
 import { APP_VERSION } from '../version.js';
 import { REGIONS } from '../regions.js';
 import { diagnostics } from '../services/maintenance.js';
+import { credentialManaged, saveCredential, validateCredential } from '../services/credentials.js';
 
 function saveSafetyBackup(): string {
   const dir = path.join(config.dataDir, 'backups');
@@ -36,6 +37,14 @@ function saveSafetyBackup(): string {
 }
 
 export async function systemRoutes(app: FastifyInstance): Promise<void> {
+  let keyChecks: number[] = [];
+  const allowKeyCheck = () => {
+    const now = Date.now();
+    keyChecks = keyChecks.filter((time) => now - time < 60_000);
+    if (keyChecks.length >= 12) return false;
+    keyChecks.push(now);
+    return true;
+  };
   app.get('/api/diagnostics', async () => ({ ...diagnostics(), sync_running: syncState.running, last_sync_at: syncState.lastFinishedAt }));
   app.get('/api/health', { config: { public: true } }, async () => {
     getDb().prepare('SELECT 1').get();
@@ -143,6 +152,24 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---- settings ----
+  app.put('/api/settings/keys/:source', { bodyLimit: 2048 }, async (req, reply) => {
+    // A custom header prevents cross-origin form writes, including on local installs without login.
+    if (req.headers['x-watch-it-settings'] !== '1' || req.headers['sec-fetch-site'] === 'cross-site') {
+      return reply.code(403).send({ error: 'Save keys from Watch It Settings on this installation.' });
+    }
+    const source = z.enum(['tmdb', 'omdb']).parse((req.params as { source: string }).source);
+    if (credentialManaged(source)) return reply.code(409).send({ error: 'This key is managed by the installation environment.' });
+    const body = z.object({ key: z.string().trim().max(128) }).strict().parse(req.body);
+    if (body.key) {
+      const valid = source === 'tmdb' ? /^[a-fA-F0-9]{32}$/.test(body.key) : /^[a-zA-Z0-9]{4,64}$/.test(body.key);
+      if (!valid) return reply.code(400).send({ error: source === 'tmdb' ? 'Paste the 32-character TMDB API Key, not the API Read Access Token.' : 'Paste the OMDb key from your activation email.' });
+      if (!allowKeyCheck()) return reply.header('retry-after', '60').code(429).send({ error: 'Too many key checks. Wait one minute and try again.' });
+      if (source === 'omdb') await omdb.testKey(body.key);
+      else await validateCredential(source, body.key);
+    }
+    saveCredential(source, body.key);
+    return { ok: true, configured: Boolean(body.key) };
+  });
   app.get('/api/settings', async () => {
     let dbSize = 0;
     try {
@@ -152,6 +179,7 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
       settings: allSettings(),
       supported_regions: REGIONS,
       keys: { tmdb: tmdb.tmdbConfigured(), omdb: omdb.omdbConfigured() },
+      managed_keys: { tmdb: credentialManaged('tmdb'), omdb: credentialManaged('omdb') },
       omdb_quota_remaining: omdb.omdbConfigured() ? omdb.omdbQuotaRemaining() : null,
       db: { path: dbPath(), size_bytes: dbSize },
     };
@@ -171,6 +199,7 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
 
   app.post<{ Params: { source: string } }>('/api/settings/test/:source', async (req, reply) => {
     const source = req.params.source;
+    if (!allowKeyCheck()) return reply.header('retry-after', '60').code(429).send({ error: 'Too many key checks. Wait one minute and try again.' });
     try {
       if (source === 'tmdb') await tmdb.testKey();
       else if (source === 'omdb') await omdb.testKey();

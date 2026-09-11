@@ -68,6 +68,12 @@ try:
     assert request(base, "/api/health")["ok"] is True
     assert request(base, "/api/settings")["keys"]["tmdb"] is False
     assert request(base, "/api/titles")["titles"] == []
+    with urllib.request.urlopen(base + "/demo/", timeout=15) as response:
+        assert b"Sample content only." in response.read()
+    live = "--live" in sys.argv[2:]
+    if live:
+        # The helper reads only the local TMDB key and never records browser traces or the key.
+        subprocess.run(["node", str(root / "scripts/setup-journey.mjs"), base], cwd=root, check=True, timeout=300)
     # Prove the documented command applies a changed .env and keeps the volume.
     with urllib.request.urlopen(urllib.request.Request(base + "/api/settings",
         data=b'{"region":"GB"}', method="PUT", headers={"Content-Type": "application/json"}), timeout=15) as response:
@@ -77,11 +83,17 @@ try:
     docker(*compose, "up", "-d", "--no-build", "--wait", "--wait-timeout", "90")
     address = docker(*compose, "port", "watch-it", "8300").strip()
     assert request("http://" + address, "/api/settings")["settings"]["region"] == "GB"
+    if live:
+        assert request("http://" + address, "/api/settings")["keys"]["tmdb"] is True
+        assert len(request("http://" + address, "/api/titles")["titles"]) == 1
+        mode = docker(*compose, "exec", "-T", "watch-it", "node", "-e",
+            "process.stdout.write((require('node:fs').statSync('/data/credentials.json').mode & 511).toString(8))")
+        assert mode == "600", "Stored credential file must be private"
     value = docker(*compose, "exec", "-T", "watch-it", "node", "-e", "process.stdout.write(process.env.IMAGE_CACHE_MB)")
     assert value == "128", "Changed environment was not applied"
     report = {"passed": True, "bundle": archive.name, "checks": ["required-files", "blank-secrets",
         "version-pinned-image", "no-source-build", "fresh-compose-install", "missing-key-guidance",
-        "apply-env-changes", "data-preserved-on-recreation"]}
+        "sample-demo", "apply-env-changes", "data-preserved-on-recreation"], "live_journey": live}
     (root / "artifacts/setup-smoke.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report))
 finally:

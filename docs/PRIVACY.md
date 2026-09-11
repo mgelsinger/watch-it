@@ -6,7 +6,11 @@ The server sends search terms and title/provider/region identifiers to TMDB, rat
 
 External source, cast-image, and watch-options links/images may connect your browser directly to the named provider. That provider can see your browser's public address and normal request metadata. Its own privacy policy applies.
 
-Keys and the optional installation password come from environment configuration. Session cookies are HttpOnly and SameSite Strict, with Secure enabled by operator configuration for HTTPS. Theme selection stays in browser local storage. Profile backups contain personal library information and preferences, but omit secrets, session tokens, and credential fingerprints. Full database snapshots include installation/session state and must remain private.
+API keys can be pasted into Settings and verified directly with their provider. App-entered keys are stored in `credentials.json` in the data directory, outside SQLite, with mode 600 in Linux containers. They are not encrypted on disk. Environment keys take precedence and remain supported. The optional installation password comes from environment configuration. Everyone with access to the shared installation can change its library and app-managed keys. Use a trusted device and HTTPS for network access.
+
+Session cookies are HttpOnly and SameSite Strict, with Secure enabled by operator configuration for HTTPS. Theme selection stays in browser local storage. Profile backups contain personal library information and preferences, but omit API keys, session tokens, and credential fingerprints. Keys are not returned by Settings or diagnostics. Full database snapshots include installation/session state; full volume copies also include the credential file. Keep both private. A fresh profile restore requires entering keys again.
+
+The standalone `/demo/` page has fictional titles, offers and progress. It uses temporary browser memory, no API requests, no storage or cookies, and no installation data. Resetting or closing it discards changes. Opening its documentation link connects to GitHub.
 
 Application logs record request paths, response/error status, and refresh activity. Standard request logging omits query strings, cookies, authorization headers, and response session cookies. Operators control log and backup storage/retention. Support diagnostics omit library contents, notes, database paths, and credentials. Sharing a report is a manual user action.
 

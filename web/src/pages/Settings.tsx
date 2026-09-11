@@ -1,11 +1,13 @@
 import { useRef, useState } from 'react';
 import { api, img, useApi } from '../api';
 import type { Provider, SyncLogRow, SyncState } from '../types';
+import ApiKeyField from '../components/ApiKeyField';
 
 interface SettingsData {
   supported_regions: string[];
   settings: Record<string, string>;
   keys: { tmdb: boolean; omdb: boolean };
+  managed_keys?: { tmdb: boolean; omdb: boolean };
   omdb_quota_remaining: number | null;
   db: { path: string; size_bytes: number };
 }
@@ -52,9 +54,9 @@ function KeyTest({ source, label, present }: { source: string; label: string; pr
     setResult(null);
     try {
       const res = await api<{ ok: boolean; error?: string }>(`/api/settings/test/${source}`, { method: 'POST' });
-      setResult(res.ok ? '✓ working' : `✗ ${res.error}`);
+      setResult(res.ok ? 'Working' : `Failed: ${res.error}`);
     } catch (e) {
-      setResult(`✗ ${(e as Error).message}`);
+      setResult(`Failed: ${(e as Error).message}`);
     } finally {
       setBusy(false);
     }
@@ -64,7 +66,7 @@ function KeyTest({ source, label, present }: { source: string; label: string; pr
       <span className="k">{label}</span>
       <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         {present !== null && (
-          <span className={present ? '' : 'muted'}>{present ? 'key present' : 'no key (set in .env)'}</span>
+          <span className={present ? '' : 'muted'}>{present ? 'key configured' : 'no key saved'}</span>
         )}
         {result && <span className="faint">{result}</span>}
         <button onClick={() => void test()} disabled={busy || present === false}>{busy ? 'testing…' : 'test'}</button>
@@ -191,7 +193,7 @@ export default function Settings() {
   };
 
   if (error) return <p role="alert">Settings unavailable: {error} <button onClick={reload}>Retry</button></p>;
-  if (loading || !data) return <p className="muted">Loading...</p>;
+  if (loading && !data || !data) return <p className="muted">Loading...</p>;
 
   const filteredProviders = (providers.data?.providers ?? []).filter((p) =>
     p.provider_name.toLowerCase().includes(providerFilter.toLowerCase()),
@@ -201,14 +203,17 @@ export default function Settings() {
   return (
     <div className="settings-section">
       <h1>Settings</h1>
+      <p>One shared library per installation. Everyone with access can view and change its titles, progress, settings and API keys.</p>
       {diagnostics.data?.scheduled_backups && <p role="status">Scheduled backups: {diagnostics.data.backup_error ?? (diagnostics.data.last_backup_at ? `last success ${diagnostics.data.last_backup_at}` : 'waiting for the next daily refresh')}.</p>}
       <p><a href="/api/diagnostics" target="_blank" rel="noreferrer">Review support diagnostics</a>. This local report contains installation status, with no library contents or credentials. Nothing is uploaded.</p>
       {settingsError && <p role="alert">{settingsError}</p>}
-      {!data.keys.tmdb && <div className="stale-note" role="status">To get started, add your TMDB API key to <code>.env</code>. For Docker, run <code>docker compose up -d --no-build</code> from your installation folder to apply it. Then test the key below and choose your region. Your library is preserved.</div>}
+      {!data.keys.tmdb && <div className="stale-note" role="status">Start here: paste your TMDB API key below. Then choose your country and streaming services. No video files or streaming-service passwords are needed. <a href="/demo/">Try the sample demo</a> first if you prefer.</div>}
       <p className="muted">Subscriptions describe services you use. Browse and Pick exclusions let you leave specific services out of a search. You can change these settings at any time.</p>
 
       <div className="panel">
         <h3>API keys</h3>
+        <ApiKeyField source="tmdb" present={data.keys.tmdb} managed={data.managed_keys?.tmdb ?? false} onSaved={() => { reload(); providers.reload(); }} />
+        <ApiKeyField source="omdb" present={data.keys.omdb} managed={data.managed_keys?.omdb ?? false} onSaved={() => { reload(); providers.reload(); }} />
         <KeyTest source="tmdb" label="TMDB (metadata, posters, providers)" present={data.keys.tmdb} />
         <KeyTest source="omdb" label="OMDb (RT / IMDb / Metacritic scores)" present={data.keys.omdb} />
         <KeyTest source="tvmaze" label="TVmaze (broadcast schedule, no key needed)" present={null} />
@@ -218,8 +223,7 @@ export default function Settings() {
             <span>{data.omdb_quota_remaining} requests</span>
           </div>
         )}
-        <p className="faint">Get your <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noreferrer">TMDB API key</a> from your account's API settings. Use the API Key, not the API Read Access Token. OMDb is optional.</p>
-        <p className="faint">After editing <code>.env</code>, Docker users run <code>docker compose up -d --no-build</code> from their installation folder. A container restart alone does not apply changed keys. For a native installation, restart the server.</p>
+        <p className="faint">Keys saved here work immediately and stay in a private file on your server, outside profile exports. They are not encrypted on disk; protect the data volume. The server sends each key only to its provider. Use HTTPS when accessing Settings over a network.</p>
       </div>
 
       <div className="panel">

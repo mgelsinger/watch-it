@@ -33,10 +33,12 @@ export interface PickCandidate {
   media_type: 'movie' | 'tv';
   name: string;
   year: number | null;
+  overview?: string | null;
   poster_path: string | null;
   source: PickSource;
   runtime: number;
   runtime_estimated: boolean;
+  runtime_basis?: 'movie' | 'series' | 'first_episode';
   providers: WatchOffer[];
   availability_check: AvailabilityCheck;
   watch_url: string | null;
@@ -64,6 +66,7 @@ interface DiscoveryCandidate {
   library_id: number | null;
   media_type: 'movie' | 'tv';
   name: string;
+  overview?: string | null;
   year: number | null;
   poster_path: string | null;
   rating: number | null;
@@ -135,7 +138,7 @@ async function buildQueries(c: PickConstraints): Promise<DiscoveryQuery[]> {
   const today = localToday();
   const recent = localToday(-30);
   const airing = localToday(-7);
-  const budget = c.time != null && c.time < 120 ? c.time : null;
+  const budget = c.time;
   const queries: DiscoveryQuery[] = [];
 
   for (const mediaType of mediaTypes(c.type)) {
@@ -230,6 +233,7 @@ function toCandidate(entry: tmdb.ListEntry, query: DiscoveryQuery): DiscoveryCan
     library_id: null,
     media_type: query.mediaType,
     name: (query.mediaType === 'movie' ? entry.title : entry.name) ?? '(untitled)',
+    overview: entry.overview ?? null,
     year: date ? Number(date.slice(0, 4)) || null : null,
     poster_path: entry.poster_path ?? null,
     rating: entry.vote_average ?? null,
@@ -313,37 +317,47 @@ function softmaxDraw(pool: DiscoveryCandidate[]): DiscoveryCandidate {
   return pool[pool.length - 1];
 }
 
-async function runtimeFor(candidate: DiscoveryCandidate): Promise<{ minutes: number; estimated: boolean }> {
-  const key = `pick_runtime:${candidate.media_type}:${candidate.tmdb_id}`;
+type Runtime = { minutes: number; estimated: boolean; basis?: 'movie' | 'series' | 'first_episode' };
+
+async function runtimeFor(candidate: DiscoveryCandidate): Promise<Runtime> {
+  const key = `pick_runtime_v3:${candidate.media_type}:${candidate.tmdb_id}`;
   const cached = cacheGet(key, DAY);
-  if (cached?.fresh) return cached.payload as { minutes: number; estimated: boolean };
+  if (cached?.fresh) return cached.payload as Runtime;
   try {
     let runtime: number | null | undefined;
+    let basis: Runtime['basis'] = candidate.media_type === 'movie' ? 'movie' : 'series';
     if (candidate.media_type === 'movie') {
       runtime = (await tmdb.movieDetails(candidate.tmdb_id)).runtime;
     } else {
-      runtime = (await tmdb.tvDetails(candidate.tmdb_id)).episode_run_time[0];
+      const details = await tmdb.tvDetails(candidate.tmdb_id);
+      runtime = details.episode_run_time.find((value) => value > 0);
+      // Many series omit the summary runtime even though the first episode has one.
+      // Use that explicit episode evidence, never an invented 45-minute fit.
+      if (!runtime && details.seasons.some((season) => season.season_number === 1)) {
+        const season = await tmdb.seasonDetails(candidate.tmdb_id, 1);
+        runtime = season.episodes.find((episode) => episode.episode_number === 1)?.runtime;
+        basis = 'first_episode';
+      }
     }
     const payload = {
-      minutes: runtime ?? (candidate.media_type === 'movie' ? 120 : 45),
-      estimated: runtime == null,
+      minutes: runtime && runtime > 0 ? runtime : (candidate.media_type === 'movie' ? 120 : 45),
+      estimated: !runtime || runtime <= 0,
+      basis,
     };
     cacheSet(key, payload);
     return payload;
   } catch (err) {
-    if (cached) return cached.payload as { minutes: number; estimated: boolean };
+    if (cached) return cached.payload as Runtime;
     throw err;
   }
 }
 
-function reasonsFor(candidate: DiscoveryCandidate, offers: WatchOffer[], c: PickConstraints): string[] {
+function reasonsFor(candidate: DiscoveryCandidate, offers: WatchOffer[], c: PickConstraints, runtime: Runtime): string[] {
   const reasons: string[] = [];
-  if (candidate.source === 'new_release') reasons.push('Released in the last 30 days');
-  else if (candidate.source === 'airing_now') reasons.push('Airing now');
-  else reasons.push('Popular right now');
-  if (candidate.rating != null) reasons.push(`${candidate.rating.toFixed(1)} TMDB`);
-  if (offers[0]) reasons.push(`On ${offers[0].provider_name}`);
-  if (c.genres.length > 0) reasons.push('Matches your mood');
+  if (c.time != null && !runtime.estimated) reasons.push(`${runtime.minutes} min ${runtime.basis === 'first_episode' ? 'first episode' : candidate.media_type === 'tv' ? 'listed episode runtime' : 'movie'} within your ${c.time} min limit`);
+  if (offers[0]) reasons.push(`Listed on ${offers[0].provider_name} in ${getSetting('region')}`);
+  if (c.genres.length > 0) reasons.push(`Catalog filter: ${c.genres.map((key) => key.replace(/-/g, ' ')).join(', ')}`);
+  if (candidate.rating != null && candidate.rating > 0) reasons.push(`${candidate.rating.toFixed(1)}/10 on TMDB`);
   return reasons;
 }
 
@@ -390,7 +404,7 @@ export async function pickNext(c: PickConstraints, exclude: string[]): Promise<P
         ...common, 'vote_count.gte': '200', sort_by: 'popularity.desc',
         [`${version.media_type === 'movie' ? 'primary_release_date' : 'first_air_date'}.lte`]: localToday(),
       };
-      if (c.time != null && c.time < 120) params['with_runtime.lte'] = String(c.time);
+      if (c.time != null) params['with_runtime.lte'] = String(c.time);
       if (!versionMatchesParams(version, params)) continue;
       const candidate = toCandidate(version.entry, { mediaType: version.media_type, source: 'popular', params });
       if (!deduped.has(candidate.key)) deduped.set(candidate.key, candidate);
@@ -426,7 +440,7 @@ export async function pickNext(c: PickConstraints, exclude: string[]): Promise<P
   if (pool.length === 0) return { candidate: null, pool_size: poolSize, exhausted: true, notice };
   scoreCandidates(pool, history);
 
-  const budget = c.time != null && c.time < 120 ? c.time : null;
+  const budget = c.time;
   const drawable = [...pool];
   let checked = 0;
   while (drawable.length > 0 && checked++ < 12) {
@@ -445,7 +459,7 @@ export async function pickNext(c: PickConstraints, exclude: string[]): Promise<P
           excludedProviderIds: c.excluded_provider_ids,
         });
       if (availability.availability_check.status !== 'fresh') notice = 'Some availability checks failed or used cached offers. Results may be incomplete; try again shortly.';
-      if (offers.length === 0 || (budget != null && runtime.minutes > budget)) continue;
+      if (offers.length === 0 || (budget != null && (runtime.estimated || runtime.minutes > budget))) continue;
       logSuggestion(candidate.media_type, candidate.tmdb_id, candidate.library_id, 'shown', c);
       return {
         candidate: {
@@ -454,16 +468,18 @@ export async function pickNext(c: PickConstraints, exclude: string[]): Promise<P
           library_id: candidate.library_id,
           media_type: candidate.media_type,
           name: candidate.name,
+          overview: candidate.overview,
           year: candidate.year,
           poster_path: candidate.poster_path,
           source: candidate.source,
           runtime: runtime.minutes,
           runtime_estimated: runtime.estimated,
+          runtime_basis: runtime.basis,
           providers: offers,
           availability_check: availability.availability_check,
           watch_url: availability.watch_url,
           rent_buy_only: offers.every((offer) => !STREAM_TYPES.has(offer.offer_type)),
-          reasons: reasonsFor(candidate, offers, c),
+          reasons: reasonsFor(candidate, offers, c, runtime),
           english_version: candidate.english_version,
         },
         pool_size: poolSize,
@@ -475,7 +491,7 @@ export async function pickNext(c: PickConstraints, exclude: string[]): Promise<P
     }
   }
 
-  return empty('Availability changed while checking these titles. Try broader filters or try again shortly.', [
+  return empty('None of the titles checked had both a matching watch offer and a known runtime within your limit. Runtime or availability information may be missing. Try broader filters or try again shortly.', [
     ...(c.excluded_provider_ids?.length ? [{ label: 'Clear service exclusions', patch: { excluded_provider_ids: [] } as Partial<PickConstraints> }] : []),
     ...(c.my_services_only ? [{ label: 'Any service', patch: { my_services_only: false } as Partial<PickConstraints> }] : []),
     ...(c.time != null ? [{ label: 'No time limit', patch: { time: null } as Partial<PickConstraints> }] : []),

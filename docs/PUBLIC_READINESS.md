@@ -1,5 +1,7 @@
 # Public-release preparation
 
+The subsequent community-launch work builds on draft PR #1 and is recorded in [COMMUNITY_LAUNCH.md](COMMUNITY_LAUNCH.md), with the [hosted-beta proposal](HOSTED_BETA.md), [sample demo](DEMO.md) and [announcement draft](ANNOUNCEMENT_DRAFT.md). The assessment below is the earlier preparation baseline.
+
 Reviewed September 11, 2026 against `be9b467` and the accompanying preparation changes. The initial public audience is people comfortable running a personal Docker application. The repository remains private until the owner approves publication.
 
 ## Assessment

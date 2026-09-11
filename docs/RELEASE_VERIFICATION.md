@@ -1,5 +1,7 @@
 # Self-install candidate verification
 
+For the community-launch candidate that extends draft PR #1, use [COMMUNITY_LAUNCH.md](COMMUNITY_LAUNCH.md). The records below describe earlier candidates and are retained for history.
+
 The September 11 screenshot, installation-guide, configuration-recovery, complete-ZIP packaging, and credential-review results are recorded in [PUBLIC_READINESS.md](PUBLIC_READINESS.md). The historical image and checksums below identify the earlier candidate and should not be used for the new preparation build.
 
 Verified September 10, 2026. App version: 1.0.0 from root `package.json`.

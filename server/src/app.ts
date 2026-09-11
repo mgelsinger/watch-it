@@ -46,6 +46,7 @@ export async function createApp(options: { logger?: boolean } = {}) {
     await app.register(fastifyStatic, { root: webDist, serve: false });
     app.get<{ Params: { '*': string } }>('/*', { config: { public: true } }, async (req, reply) => {
       const relative = req.params['*'];
+      if (relative === 'demo' || relative === 'demo/') return reply.sendFile('demo/index.html');
       if (/^(api|img)(\/|$)/.test(relative)) return reply.code(404).send({ error: 'not found' });
       const resolved = path.resolve(webDist, relative);
       const within = resolved.startsWith(path.resolve(webDist) + path.sep);

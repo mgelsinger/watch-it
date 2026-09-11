@@ -33,7 +33,7 @@ def package_setup(image_archive: Path) -> Path:
 1. Install and start Docker with Compose. Windows uses Linux containers.
 2. Open a terminal in this extracted folder.
 3. Copy `.env.example` to `.env` (PowerShell: `Copy-Item .env.example .env`; Linux: `cp .env.example .env`).
-4. Open `.env` in a text editor and set `TMDB_API_KEY` to your TMDB API Key. OMDb is optional.
+4. Leave the template defaults for a local installation. API keys will be entered in the app.
 5. Load and start the tested image:
 
 ```sh
@@ -41,8 +41,11 @@ docker load --input {expected_name}
 docker compose up -d --no-build --wait
 ```
 
-6. Open http://localhost:8300. In Settings, test TMDB, choose your region, and select your streaming services.
-7. Open Browse or Pick For Me. Your library can start empty.
+6. Open http://localhost:8300. In Settings > API keys > TMDB API key, paste your key and choose Verify and save TMDB key. The field links to TMDB's key application. OMDb is optional. Choose your region.
+7. Open Pick For Me, choose 45 min and Light / comedy, then select your streaming services. Save a recommendation to your Watchlist. Your library can start empty.
+
+No video files needed. Watch It does not play video; playback happens on your streaming service.
+One shared library per installation. Try the separate sample demo at http://localhost:8300/demo/ without any keys.
 
 No Git, Node.js, Python, or source build is needed. Keep this folder for future Compose commands.
 After changing `.env`, run `docker compose up -d --no-build` to apply it.
