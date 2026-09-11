@@ -4,13 +4,13 @@ watch-it is a single-user installation. The release target is Linux containers o
 
 ## First installation
 
-Copy `.env.example` to `.env` (`Copy-Item .env.example .env` in PowerShell), add your TMDB key, then run:
+For prerequisites, getting the key, source ZIP setup, and troubleshooting, start with the [installation guide](INSTALL.md). Copy `.env.example` to `.env` (`Copy-Item .env.example .env` in PowerShell), add your TMDB key, then run:
 
 ```sh
 docker compose up -d --build
 ```
 
-Open http://localhost:8300, visit Settings, test the key, choose a region, and optionally select subscribed services. These services are separate from per-search exclusions. Missing keys can be corrected by editing `.env` and restarting; your library stays intact.
+Open http://localhost:8300, visit Settings, test the key, choose a region, and optionally select subscribed services. These services are separate from per-search exclusions. To apply a changed `.env`, run `docker compose up -d --no-build` from the installation folder. A container restart alone does not apply environment changes; your library stays intact.
 
 The Docker port binds to `127.0.0.1` by default. Native startup also defaults to localhost through `HOST`. To allow trusted LAN clients, set `BIND_ADDRESS` to the host's LAN address. Set `WATCH_IT_PASSWORD` to a unique password of at least 12 characters if other people can reach the installation. Require a password and HTTPS before exposing it to untrusted networks. `WATCH_IT_SECURE_COOKIE=true` is for HTTPS only. Keep forwarded headers untrusted unless an exact proxy address or CIDR is configured in `WATCH_IT_TRUSTED_PROXIES`.
 
@@ -18,13 +18,13 @@ The runtime runs as UID/GID 1000 with restricted data permissions. It contains N
 
 ## Install a downloaded release
 
-Use the version shown in that release's notes. For version 1.0.0, the commands are:
+Download the versioned installation ZIP and `checksums.txt` from the release, verify the ZIP checksum, and extract it. The ZIP contains the tested image archive, Compose configuration pinned to that version, a blank `.env.example`, `START_HERE.md`, and the operating guides. It includes no source-build requirement. Create `.env` and add your key, then use the version shown in that release's notes. For version 1.0.0:
 
 ```sh
 docker load --input watch-it-1.0.0-linux-amd64.tar
 ```
 
-Set `WATCH_IT_IMAGE=watch-it:1.0.0` in `.env`, then run `docker compose up -d --no-build`. Compare the archive's SHA-256 with `checksums.txt` before loading it (`Get-FileHash -Algorithm SHA256` in PowerShell, `sha256sum` on Linux). A release archive is created from the image that passed the Docker checks, with its image ID recorded alongside the archive checksum. No public registry is required.
+The included `.env.example` already selects `WATCH_IT_IMAGE=watch-it:1.0.0`; run `docker compose up -d --no-build --wait`. Compare the ZIP's SHA-256 with `checksums.txt` before extracting it (`Get-FileHash -Algorithm SHA256` in PowerShell, `sha256sum` on Linux). A release ZIP is created from the image that passed the Docker checks, with its image ID recorded separately in `image-id.txt`. No public registry is required. [Detailed steps](INSTALL.md#install-a-prebuilt-release).
 
 ## Upgrade an existing installation
 

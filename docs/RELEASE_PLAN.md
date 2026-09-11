@@ -2,6 +2,8 @@
 
 Status: implementation completed September 10, 2026. Local release-candidate verification is recorded in [RELEASE_VERIFICATION.md](RELEASE_VERIFICATION.md). Distribution still needs the owner's code-license and private security-contact decisions, followed by the configured GitHub release checks.
 
+September 11 public-preparation work adds a screenshot README, first-install guide, correct environment-update instructions, and a complete installation ZIP tested from its extracted files in CI. See [PUBLIC_READINESS.md](PUBLIC_READINESS.md) for the evaluation, evidence, and remaining publication decisions.
+
 The release target is a single-user app that people install and operate themselves. Docker Compose is the primary installation path. Each installation keeps its own SQLite database, credentials, library, and preferences. Support fresh installations and upgrades on Linux and Windows Docker hosts.
 
 The core discovery features and the reliability, packaging, recovery, and maintenance work below are implemented. User accounts, registration, billing, tenant separation, and a shared public website are outside this plan. Access from outside the local machine is an optional operator configuration.

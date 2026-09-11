@@ -400,7 +400,7 @@ export default function Pick() {
               <button
                 className="pick-details-hit"
                 aria-label={`Open full details for ${candidate.name}`}
-                title="Open full details. New titles are added to your Watchlist."
+                title="Preview full details without adding this title to your library."
                 disabled={busy}
                 onClick={() => void openDetails(candidate)}
               />

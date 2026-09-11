@@ -2,107 +2,112 @@
 
 **Find your next watch. Remember where you left off.**
 
-watch-it brings movie and TV discovery, streaming availability, and your viewing history into one place. Browse across services, get a recommendation for tonight, and keep track of shows without juggling separate watchlists.
+A personal home for movies and TV, across your streaming services. Find something for tonight, keep a watchlist, and pick up at the next episode.
 
-You run it yourself. One installation, one personal library, one SQLite database. No hosted account or telemetry. watch-it helps you find and track titles; playback happens on your streaming service.
+Run it on your own computer or home server. Your library stays in your installation, with no watch-it account or telemetry. Metadata and streaming availability come from external providers; playback opens on your streaming service.
 
-[Install](#install) · [Catalog and filters](#catalog-and-filters) · [Backups and updates](#backups-and-updates) · [Development](#development)
+![watch-it's sample library, with movies and shows, viewing status, posters, and streaming services](docs/images/library.png)
+
+[Get started](#get-started) · [Take a look](#take-a-look) · [Installation help](docs/INSTALL.md) · [Backups and updates](docs/OPERATIONS.md) · [Report a bug](https://github.com/mgelsinger/watch-it/issues)
 
 ## What you can do
 
-- **Pick something for tonight.** Get recommendations by mood, genre, available time, and services. Save a title for later, shuffle, or tell the app never to suggest it again.
-- **Browse across services.** Explore movies, TV, Korean dramas, and anime. Search broadly, use only your subscriptions, or exclude particular sources.
-- **See where to watch.** Check regional subscription, free, rental, and purchase offers, then open watch options. Availability checks show when information is dated or incomplete.
-- **Keep your place.** Track watched episodes, continue watching, and see upcoming air dates. Keep a Watchlist, a quieter Saved for Later list, ratings, and personal notes.
-- **Explore a title.** Find cast, scores, seasons, release dates, and similar shows or movies. Opening a preview does not add it to your library.
-- **Keep your data.** Export and restore your profile, enable scheduled backups, and move your installation between machines.
+- **Decide what to watch.** Pick For Me uses your available time, mood, genres, and services. Shuffle, save a suggestion, or choose never to see it again.
+- **Browse across services.** Explore movies, TV, Korean dramas, and anime. Search all available sources or stick to your subscriptions, with exclusions for services you do not want.
+- **Keep your place.** Track watched episodes, see what is coming next, and separate your Watchlist from Saved for Later.
+- **Look closer.** Open a title for cast, seasons, scores, similar titles, and regional watch options. Previewing a title does not add it to your library.
+- **Keep your history.** Export and restore your library, progress, ratings, notes, and preferences. Move them to another installation whenever you need to.
 
-## Install
+## Take a look
 
-You need **Docker with Compose** and a [TMDB API v3 key](https://www.themoviedb.org/settings/api). The tested container platform is Linux x86-64, including Docker Desktop on Windows using Linux containers. ARM builds are not yet verified.
+### Find something for tonight
 
-**Already running watch-it?** Follow the [upgrade instructions](docs/OPERATIONS.md#upgrade-an-existing-installation) first. Older installations need a volume ownership update and a pre-upgrade snapshot.
+Set your time, choose a mood, and decide which services to include.
 
-1. Clone the repository:
+![A live Pick For Me result with runtime, streaming options, and actions to save or shuffle](docs/images/recommendation.png)
+
+### Explore beyond your watchlist
+
+Browse a full genre catalog, including anime and Korean dramas, then refine it with the filters you care about.
+
+![Anime discovery in watch-it with catalog filters and title posters](docs/images/browse.png)
+
+<details>
+<summary>See recommendation filters, episode tracking, and the mobile layout</summary>
+
+![Pick For Me with time, type, mood, and streaming preferences](docs/images/pick.png)
+
+![A sample Severance detail page with watched progress and episode controls](docs/images/title.png)
+
+<img src="docs/images/mobile.png" alt="The sample watch-it library in a narrow mobile browser viewport" width="390">
+
+</details>
+
+Screenshots use a separate sample library and live TMDB artwork. Watch history is illustrative. Availability depends on your region and when you check; screenshots are not a current service listing. [Screenshot details and credits](docs/SCREENSHOTS.md).
+
+## Get started
+
+The current installation path is Docker. You need:
+
+- **[Docker with Compose](https://docs.docker.com/compose/install/).** On Windows, start Docker Desktop and use Linux containers.
+- **A [TMDB account and API key](https://www.themoviedb.org/settings/api).** Choose the API Key, not the API Read Access Token. [Step-by-step help](docs/INSTALL.md#2-get-your-tmdb-key).
+
+The verified container platform is **Linux x86-64**, including Docker Desktop on Windows. ARM, Apple Silicon, and other browser/device combinations need further verification. You do not need Node.js or Python for this installation.
+
+**Upgrading?** Use the [upgrade guide](docs/OPERATIONS.md#upgrade-an-existing-installation) to preserve your existing library and prepare a rollback.
+
+1. **Get the project.** [Download the source ZIP](https://github.com/mgelsinger/watch-it/archive/refs/heads/main.zip) and extract it, or clone it:
 
    ```sh
    git clone https://github.com/mgelsinger/watch-it.git
    cd watch-it
    ```
 
-2. Copy `.env.example` to `.env`:
+2. **Open a terminal in the project folder**, alongside `docker-compose.yml`. Copy `.env.example` to `.env`:
+
+   Windows PowerShell:
+
+   ```powershell
+   Copy-Item .env.example .env
+   ```
+
+   Linux:
 
    ```sh
    cp .env.example .env
    ```
 
-   In PowerShell, use `Copy-Item .env.example .env`.
+3. **Open `.env` in a text editor.** Paste your key after `TMDB_API_KEY=` and save. Leave OMDb blank to start; it is optional.
 
-3. Edit `.env` and set `TMDB_API_KEY`. An [OMDb key](https://www.omdbapi.com/apikey.aspx) is optional and adds IMDb, Rotten Tomatoes, and Metacritic scores where available.
-
-4. Build and start:
+4. **Build and start the app:**
 
    ```sh
-   docker compose up -d --build
+   docker compose up -d --build --wait
    ```
 
-Open **<http://localhost:8300>**. In **Settings**, test your key, choose your region, and optionally select your streaming services. You can start discovering titles with an empty library.
+   The first build downloads dependencies. When it finishes, open **[localhost:8300](http://localhost:8300)**.
 
-The app binds to localhost by default and runs as a non-root user. For access from other devices, see [LAN and HTTPS setup](docs/OPERATIONS.md). An optional installation password is configured with `WATCH_IT_PASSWORD`; use at least 12 characters. Require a password and HTTPS before exposing the app to untrusted networks.
+In **Settings**, test TMDB, choose your country under **Watch-provider region**, and select any streaming services you use. Open **Pick For Me** or **Browse** to find your first title. You can start with an empty library.
 
-## Catalog and filters
+[Full installation guide, key setup, and troubleshooting](docs/INSTALL.md). A downloaded release, when available, includes a prebuilt image and its setup files so you can skip the build.
 
-### Korean dramas, anime, and English versions
+## A few useful answers
 
-Choose **Korean Dramas** or **Anime** under Genres in Browse, or Mood in Pick For Me. Korean Dramas matches Korean-language TV dramas; Anime matches Japanese-language animated movies and TV. Searches use TMDB's matching catalog with pagination across services, including Netflix, Crunchyroll, and other providers represented in your region.
+**Does watch-it play or download videos?** No. It helps you discover and track titles, then opens watch options for your region. Streaming subscriptions are separate.
 
-Two optional controls help when you want an English version:
+**Do I need OMDb?** No. TMDB supplies discovery, posters, and its own ratings. An optional OMDb key adds IMDb, Rotten Tomatoes, and Metacritic scores where available.
 
-| Option | What it does |
-|---|---|
-| **English audio preferred** | Prioritizes English-original titles and dubs with recorded evidence. Titles with unknown audio remain eligible. Browse prioritizes within each loaded batch. |
-| **Include American remakes/adaptations** | Adds specifically linked English-language adaptations of Korean dramas or anime, including live-action adaptations, while respecting the other filters. |
+**Can I use it on my phone?** The layout adapts to smaller screens. To reach a home-server installation from another device, follow [LAN and HTTPS setup](docs/OPERATIONS.md#first-installation). `localhost` on your phone refers to the phone itself.
 
-Genre discovery is independent of the smaller audio-evidence and adaptation lists. Those lists supplement results; they do not define the genre catalog. Audio labels include dated sources where available. Confirm the English track, season, and episode on the service you use.
+**Will it find every show or English dub?** Catalog and regional availability depend on upstream data. English-audio evidence and adaptation links are partial. [How the filters work](docs/CATALOG.md).
 
-### Leave out services you do not want
-
-Use **Exclude services** in Browse or Pick For Me. Search for a source and check it to exclude it. Channel variants, such as Crunchyroll Amazon Channel, are separate choices.
-
-A title still qualifies if an included service carries it. Excluding Crunchyroll, for example, does not remove a show that is also available on Netflix. Exclusions also work alongside your selected subscriptions. **Clear exclusions** brings those sources back.
-
-Browse keeps filters in its URL so you can bookmark a search. Pick For Me remembers preferences when you request a recommendation and includes them in profile backups.
-
-**Coverage has limits.** Availability depends on your region and upstream data, and may be cached or incomplete. watch-it does not scrape streaming apps or guarantee every title, service, dub, or adaptation. Watch options lead to TMDB's regional watch page, where you can follow available service links.
-
-## Backups and updates
-
-Your library lives in the Docker data volume, with SQLite at `/data/watch-it.db`. It survives container rebuilds and `docker compose down`.
-
-In **Settings**, export a `.watchit.json` profile to a location you control. It includes your library, watched progress, ratings, notes, service preferences, and recommendation history. Credentials and login sessions are excluded. Restore supports merge or replace, validates the file first, and creates a safety copy before changing your profile.
-
-For daily profile backups, set `BACKUP_DIR=/data/scheduled-backups` in `.env`; the default retention is seven completed backups. Keep another copy outside the Docker volume to protect against losing that volume. Cached poster files are pruned automatically by age and size.
-
-Use the [operations guide](docs/OPERATIONS.md) for updates, ownership changes, database snapshots, rollback, backup retention, and optional HTTPS. Keep your data volume during updates; `docker compose down -v` deletes it.
+**Where is my library?** In the Docker data volume. Rebuilding the app preserves it. Export a profile in Settings and keep a copy outside the installation. [Backups, upgrades, and recovery](docs/OPERATIONS.md).
 
 ## Development
 
-The app uses **TypeScript, React, Vite, Fastify, and SQLite**. A production build serves the web app and API from one Node process.
+TypeScript, React, Vite, Fastify, and SQLite. One Node process serves the built app and API.
 
-Use **Node 22.12 or newer within Node 22**. Configure `.env` as above, then install the locked dependencies:
-
-```sh
-npm ci
-```
-
-Run these in separate terminals:
-
-```sh
-npm run dev:server
-npm run dev:web
-```
-
-Open <http://localhost:5173>. Vite proxies API requests to port 8300, which must be free for the development server.
+Use **Node 22.12 or newer within Node 22**, configure `.env`, and run `npm ci`. Start `npm run dev:server` and `npm run dev:web` in separate terminals, then open http://localhost:5173. Port 8300 must be free for the development API.
 
 ```sh
 npm run typecheck
@@ -112,13 +117,13 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-CI checks Windows and Linux builds, server and browser regressions, dependency audits, and the production image's installation, upgrade, restore, rollback, and HTTPS behavior. Live provider checks run separately. See the [verification record](docs/RELEASE_VERIFICATION.md) and [dependency review](docs/DEPENDENCY_REVIEW.md) for the tested candidate and remaining platform findings.
+CI checks Windows and Linux builds, browser flows, installation, upgrades, recovery, and the production image. [Verification record](docs/RELEASE_VERIFICATION.md) · [Contribution guide](CONTRIBUTING.md).
 
-## Support and project status
+## Status and support
 
-For bugs, [open an issue](https://github.com/mgelsinger/watch-it/issues) with your app version, platform, and steps to reproduce. Include the region and title when availability is involved. Review reports before sharing and leave out keys, passwords, backups, and private notes. See [SECURITY.md](SECURITY.md) for security-reporting status and [data privacy](docs/PRIVACY.md) for what stays local and what goes to providers.
+Prepared for personal self-installation. Public distribution is being finalized; a code license and private security-reporting channel still need to be selected. See the [public-release preparation record](docs/PUBLIC_READINESS.md).
 
-This repository is prepared for self-installation from source. Packaged releases remain gated on the owner's code-license and private security-contact decisions, followed by the release checks. No repository license has been selected yet. Implementation status is tracked in the [release plan](docs/RELEASE_PLAN.md).
+For ordinary bugs, [open an issue](https://github.com/mgelsinger/watch-it/issues). Include your app version, installation method, and steps to reproduce. [Security reporting](SECURITY.md) · [Data and privacy](docs/PRIVACY.md).
 
 ## Credits
 
@@ -126,4 +131,4 @@ This repository is prepared for self-installation from source. Packaged releases
 
 This product uses the TMDB API but is not endorsed or certified by TMDB.
 
-Metadata and artwork come from [TMDB](https://www.themoviedb.org/); watch-provider availability is supplied by [JustWatch](https://www.justwatch.com/) through TMDB. Optional ratings come from [OMDb](https://www.omdbapi.com/), and broadcast schedules come from [TVmaze](https://www.tvmaze.com/). See [attribution details](docs/ATTRIBUTION.md).
+Metadata and artwork come from [TMDB](https://www.themoviedb.org/), with watch-provider data from [JustWatch](https://www.justwatch.com/) through TMDB. Optional ratings come from [OMDb](https://www.omdbapi.com/), and broadcast schedules from [TVmaze](https://www.tvmaze.com/). [Attribution details](docs/ATTRIBUTION.md).

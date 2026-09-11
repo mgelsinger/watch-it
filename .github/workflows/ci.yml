@@ -41,6 +41,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
@@ -48,6 +51,10 @@ jobs:
       - run: node scripts/docker-smoke.mjs watch-it:ci-${{ github.sha }}
       - run: node scripts/proxy-smoke.mjs watch-it:ci-${{ github.sha }}
       - run: node scripts/scan-image.mjs watch-it:ci-${{ github.sha }}
+      - name: Package and verify the downloadable installation
+        run: |
+          node scripts/package-release.mjs
+          python scripts/test-setup.py artifacts/watch-it-$(node -p "require('./package.json').version")-linux-amd64.zip
       - uses: actions/upload-artifact@v4
         if: always()
         with:

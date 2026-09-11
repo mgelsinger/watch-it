@@ -1,0 +1,17 @@
+name: Feature idea
+description: Suggest a focused improvement to discovery or tracking.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the problem or friction in your current workflow.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: What would help?
+      description: Describe your idea and any workaround you currently use.
+    validations:
+      required: true

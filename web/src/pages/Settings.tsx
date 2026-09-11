@@ -204,7 +204,7 @@ export default function Settings() {
       {diagnostics.data?.scheduled_backups && <p role="status">Scheduled backups: {diagnostics.data.backup_error ?? (diagnostics.data.last_backup_at ? `last success ${diagnostics.data.last_backup_at}` : 'waiting for the next daily refresh')}.</p>}
       <p><a href="/api/diagnostics" target="_blank" rel="noreferrer">Review support diagnostics</a>. This local report contains installation status, with no library contents or credentials. Nothing is uploaded.</p>
       {settingsError && <p role="alert">{settingsError}</p>}
-      {!data.keys.tmdb && <div className="stale-note" role="status">To get started, set your TMDB key in the installation environment and restart the app. Then test the key below, choose your region, and optionally select your services. Your library is preserved.</div>}
+      {!data.keys.tmdb && <div className="stale-note" role="status">To get started, add your TMDB API key to <code>.env</code>. For Docker, run <code>docker compose up -d --no-build</code> from your installation folder to apply it. Then test the key below and choose your region. Your library is preserved.</div>}
       <p className="muted">Subscriptions describe services you use. Browse and Pick exclusions let you leave specific services out of a search. You can change these settings at any time.</p>
 
       <div className="panel">
@@ -218,20 +218,21 @@ export default function Settings() {
             <span>{data.omdb_quota_remaining} requests</span>
           </div>
         )}
-        <p className="faint">Keys are read from the .env file at startup; edit it and restart the container to change them.</p>
+        <p className="faint">Get your <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noreferrer">TMDB API key</a> from your account's API settings. Use the API Key, not the API Read Access Token. OMDb is optional.</p>
+        <p className="faint">After editing <code>.env</code>, Docker users run <code>docker compose up -d --no-build</code> from their installation folder. A container restart alone does not apply changed keys. For a native installation, restart the server.</p>
       </div>
 
       <div className="panel">
         <h3>Region & schedule</h3>
         <div className="kv">
           <span className="k">Watch-provider region</span>
-          <select value={data.settings.region} onChange={(e) => void saveSetting('region', e.target.value)}>
+          <select aria-label="Watch-provider region" value={data.settings.region} onChange={(e) => void saveSetting('region', e.target.value)}>
             {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
         </div>
         <div className="kv">
           <span className="k">Broadcast schedule country (TVmaze)</span>
-          <select value={data.settings.schedule_country} onChange={(e) => void saveSetting('schedule_country', e.target.value)}>
+          <select aria-label="Broadcast schedule country" value={data.settings.schedule_country} onChange={(e) => void saveSetting('schedule_country', e.target.value)}>
             {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
         </div>

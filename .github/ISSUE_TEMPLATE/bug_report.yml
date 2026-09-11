@@ -1,0 +1,42 @@
+name: Bug report
+description: Report something that did not work as expected.
+body:
+  - type: markdown
+    attributes:
+      value: "Please omit API keys, passwords, .env files, databases, backups, and private notes. For vulnerabilities, follow SECURITY.md instead of opening a public issue."
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Find it in Settings support diagnostics.
+    validations:
+      required: true
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation method
+      options:
+        - Docker built from source
+        - Prebuilt Docker release
+        - Native Node development
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system and browser
+      placeholder: Windows 11, Docker Desktop, Chrome
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: What happened?
+      description: Include steps to reproduce, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: catalog
+    attributes:
+      label: Title, region, and services
+      description: For discovery or availability issues, include the title/year, selected country, and service filters.
