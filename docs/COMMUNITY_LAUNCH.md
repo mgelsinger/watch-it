@@ -24,7 +24,8 @@ The work builds on `prepare-public-release` and [draft PR #1](https://github.com
 | HTTPS | Passed: isolated proxy, protected routes, Secure cookie and login throttling. |
 | Application dependency audit | Zero production/development findings. |
 | Container audit | Gate passed: zero high/critical, 15 medium and 7 low with the dated applicability/residual-risk review. This is not a vulnerability-free claim. |
-| Installation ZIP and live journey | Final verification recorded in the local setup reports and PR description. |
+| Installation ZIP and live journey | Passed from the extracted ZIP: live key verification, US services, 45-minute comedy, watch-options HTTP, preview, save, episode persistence, personal-only export, replace restore and metadata refresh with progress preserved, demo isolation, and key/library persistence after container recreation. The live pick was Ted Lasso, 33 minutes; this verifies mechanics, not a universal tone or availability guarantee. |
+| Secret review | Gitleaks 8.30.1 found no detected secrets in all local Git refs (16 commits at scan time) or the prepared source tree. Reports are redacted. |
 | Release configuration | Passed. Publication check intentionally remains blocked until GitHub private reporting is enabled. |
 
 The final local tested image is `sha256:fbbb064a435b0e51089992da090ac0dc20b922f0f7dba82e6d6079a09da9c7a9`. Machine-readable reports and the candidate ZIP are in ignored `artifacts/`; CI retains its own exact tested image and reports. Use the final tagged CI artifact for publication. Earlier records in [PUBLIC_READINESS.md](PUBLIC_READINESS.md) and [RELEASE_VERIFICATION.md](RELEASE_VERIFICATION.md) are historical.
