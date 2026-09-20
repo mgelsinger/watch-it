@@ -1,6 +1,10 @@
 {
   "code_license": null,
   "security_contact": null,
+  "provider_terms_review": {
+    "status": "pending",
+    "record": "docs/PROVIDERS.md"
+  },
   "support_url": "https://github.com/mgelsinger/watch-it/issues",
   "distribution": "docker-archive"
 }

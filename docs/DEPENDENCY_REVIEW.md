@@ -1,5 +1,18 @@
 # Dependency and container review
 
+## September 20 refresh: gate remains blocked
+
+The candidate image `sha256:5e6ebf496b7659e6702a4c1cc69c86faa594806c539d61fb3e0893a61fcd045a` has zero high/critical findings, 15 medium and 7 low findings in the refreshed scan. Application audits still have zero findings. The scanner correctly rejects two medium IDs missing from the earlier accepted list. They have not been added to that list:
+
+| Finding | Current evidence and disposition |
+| --- | --- |
+| CVE-2026-8674 | A long DNS search domain from resolver configuration or `LOCALDOMAIN` can abort a process using glibc. Provider hostname resolution makes this relevant. The candidate's test resolver had no search domains and `LOCALDOMAIN` was unset, but other Docker hosts can inherit DHCP/VPN configuration. Non-root execution and HTTP limits do not fix this. Debian lists stable trixie, including newer `2.41-12+deb13u4`, as vulnerable; a routine base refresh alone does not resolve it. Keep the gate blocked pending a verified mitigation/fix or explicit maintainer residual-risk disposition. [Debian tracker](https://security-tracker.debian.org/tracker/CVE-2026-8674). |
+| CVE-2026-89092 | Previously recorded with unknown severity, now medium. The advisory requires nscd. The shipped candidate again has no `/usr/sbin/nscd` and no `/var/run/nscd/socket`; it runs Node. The same was observed in the current upstream nonroot base. This supports a container-specific non-applicability disposition, not a claim about the host or modified images. Record maintainer disposition before changing the reviewed medium list. [Debian tracker](https://security-tracker.debian.org/tracker/CVE-2026-89092). |
+
+The current upstream runtime was inspected and contains glibc `2.41-12+deb13u4`; the candidate is pinned to `2.41-12+deb13u3`. No Dockerfile update was made merely to hide a finding. The previous review deadline is unchanged. The earlier acceptance below covers only its listed findings and does not clear these new scanner results.
+
+## Earlier accepted platform review
+
 Reviewed September 10, 2026. Owner: repository maintainers. Review again by October 10, 2026, or before the next release, whichever comes first.
 
 The application dependency audit is clear for both production-only and all installed dependencies. The upgrade covers Fastify 5.12.3, `@fastify/static` 10.1.3, node-cron 4.6.0, React Router 7.18.3, Vite 7.3.6, their compatible integrations, and transitive fixes. The committed lockfile records exact resolutions. Only the reviewed better-sqlite3 and esbuild lifecycle scripts are approved for npm 12. Clean installation is also checked with the Node 22 bundled npm.

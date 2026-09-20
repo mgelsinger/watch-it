@@ -9,6 +9,7 @@ export default function PickServices({ onSelect }: { onSelect: () => void }) {
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState('');
   const selected = data?.providers.filter((provider) => provider.enabled) ?? [];
+  const matches = data?.providers.filter((provider) => provider.provider_name.toLowerCase().includes(filter.trim().toLowerCase())) ?? [];
   const toggle = async (provider: Provider) => {
     setBusy(true); setSaveError('');
     try {
@@ -29,10 +30,11 @@ export default function PickServices({ onSelect }: { onSelect: () => void }) {
       {error && <p role="alert">Services unavailable: {error} <button onClick={reload}>Retry services</button></p>}
       {saveError && <p role="alert">{saveError}</p>}
       <div className="pick-service-options">
-        {data?.providers.filter((provider) => provider.provider_name.toLowerCase().includes(filter.toLowerCase())).map((provider) =>
+        {matches.map((provider) =>
           <label key={provider.provider_id}><input aria-label={`Use ${provider.provider_name}`} type="checkbox" checked={!!provider.enabled} disabled={busy} onChange={() => void toggle(provider)} /> {provider.provider_name}</label>)}
       </div>
       {data && data.providers.length === 0 && <p className="muted">Add a working TMDB key in Settings to load services for your region.</p>}
+      {data && data.providers.length > 0 && matches.length === 0 && <p role="status">No services match this search in {data.region}. Try another name or check your region in Settings. <button onClick={() => setFilter('')}>Clear service search</button></p>}
     </details>
   </div>;
 }

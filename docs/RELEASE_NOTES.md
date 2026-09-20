@@ -1,6 +1,6 @@
 # Self-install release candidate
 
-This candidate targets single-user Linux containers on x86-64 Linux and Windows Docker Desktop. Native development uses Node 22.12+ within Node 22. Distribution remains gated on the owner selecting the code license and a private security-reporting contact.
+This candidate targets one shared library per installation on x86-64 Linux containers and Windows Docker Desktop. Native development uses Node 22.12+ within Node 22. Distribution remains gated on the code license, a private security-reporting contact, provider metadata-retention review, and the current container advisory gate. See `docs/COMMUNITY_LAUNCH.md` for the current review.
 
 - Updated framework/build dependencies and introduced dependency/container audit gates.
 - Fixed Browse retry loops, later-page error recovery, empty-page handling, and cancellation after filter changes.
@@ -14,6 +14,7 @@ This candidate targets single-user Linux containers on x86-64 Linux and Windows 
 - Clarified the product's discovery and tracking purpose: no video files, hosting or playback, and one shared library per installation.
 - Added TMDB and optional OMDb key fields in Settings, provider verification before saving, actionable errors, immediate activation, and protected local storage outside profile exports. Existing environment keys still take precedence.
 - Made services selectable within Pick For Me and added Light / comedy guidance, a synopsis, supported reasons, explicit offer types, watch-link fallback and retry actions.
+- Added retry for unavailable mood choices while accurately preserving saved filters, and explained empty service searches. Added provider content-license links and an honest comparison with existing discovery/tracking alternatives.
 - Fixed time options of 120 minutes or longer disabling the limit. Unknown runtimes no longer masquerade as a 45-minute match. Missing series runtimes can use explicitly labeled first-episode data.
 - Added an isolated, keyless sample demo with fictional content and refreshed only the recommendation, preferences and episode-progress screenshots.
 - Added a draft community announcement and a hosted-beta implementation proposal. No hosted accounts or private multi-user libraries are included in this release.

@@ -1,5 +1,9 @@
 # Public-release preparation
 
+## September 20 follow-up
+
+The review of draft PR #1 found an additional release item: persisted provider metadata and portable backups do not have a complete retention policy matching TMDB's six-month cache limit. See [provider review](PROVIDERS.md) for the observed behavior and resolution options. `check:release` now also requires an approved, recorded provider-terms review. The license and private security contact remain unset. The hosted proposal now uses operator-managed credentials, with no API keys required from ordinary users, and remains proposal-only. The current [community-launch report](COMMUNITY_LAUNCH.md) separates this follow-up from the earlier checks below.
+
 The subsequent community-launch work builds on draft PR #1 and is recorded in [COMMUNITY_LAUNCH.md](COMMUNITY_LAUNCH.md), with the [hosted-beta proposal](HOSTED_BETA.md), [sample demo](DEMO.md) and [announcement draft](ANNOUNCEMENT_DRAFT.md). The assessment below is the earlier preparation baseline.
 
 Reviewed September 11, 2026 against `be9b467` and the accompanying preparation changes. The initial public audience is people comfortable running a personal Docker application. The repository remains private until the owner approves publication.

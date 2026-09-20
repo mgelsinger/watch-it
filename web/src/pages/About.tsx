@@ -10,7 +10,7 @@ export default function About() {
     <h2>Credits</h2>
     <a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer"><img src="/tmdb-logo.svg" alt="TMDB" width="100" /></a>
     <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
-    <p>Watch-provider data is supplied by <a href="https://www.justwatch.com/">JustWatch</a> through TMDB. Ratings come from <a href="https://www.omdbapi.com/">OMDb</a>. Broadcast schedules come from <a href="https://www.tvmaze.com/api#licensing">TVmaze</a>.</p>
+    <p>Watch-provider data is supplied by <a href="https://www.justwatch.com/">JustWatch</a> through TMDB. Optional ratings from <a href="https://www.omdbapi.com/">OMDb</a> use <a href="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</a>. Broadcast schedules from <a href="https://www.tvmaze.com/api#licensing">TVmaze</a> use <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>. Provider data is reformatted for display; these licenses are separate from the application code.</p>
     <h2>Your data</h2>
     <p>Your library, watched episodes, notes, preferences, sessions, and backups stay on your installation. The app has no telemetry or automatic support uploads.</p>
     <p>Your server requests search terms, title details, regional offers, images, ratings, and schedules from their respective providers. Opening an external source or watch-options link connects your browser to that website. Providers apply their own privacy policies.</p>

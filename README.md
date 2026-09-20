@@ -20,6 +20,12 @@ Run it on your computer or home server using Docker and your own TMDB API key, w
 - **Look closer.** Open a title for cast, seasons, scores, similar titles, and regional watch options. Previewing a title does not add it to your library.
 - **Keep your history.** Export and restore your library, progress, ratings, notes, and preferences. Move them to another installation whenever you need to.
 
+## Why choose Watch It?
+
+[JustWatch](https://www.justwatch.com/) already helps you find streaming availability and keep a cross-service watchlist. Watch-tracking apps such as [Trakt](https://trakt.tv/) already track viewing history. Watch It may suit you if you want suggestions based on your time and services, saved titles, and manual episode progress together in a self-hosted library with portable exports. Try those alternatives if you prefer an established hosted service without installation. [Jellyfin](https://jellyfin.org/) serves a different purpose: hosting and playing your personal media files.
+
+Watch It does not claim a unique catalog, better recommendations, or automatic playback tracking. Its appeal is this particular discovery-to-progress workflow on your own installation.
+
 ## Take a look
 
 ### Find something for tonight
@@ -141,7 +147,7 @@ CI checks Windows and Linux builds, browser flows, installation, upgrades, recov
 
 ## Status and support
 
-Prepared for personal self-installation. Public distribution is being finalized; a code license and private security-reporting channel still need to be selected. See the [public-release preparation record](docs/PUBLIC_READINESS.md).
+Prepared for personal self-installation. Public distribution is being finalized; a code license and private security-reporting channel still need to be selected, and [provider metadata retention](docs/PROVIDERS.md) needs resolution. See the [public-release preparation record](docs/PUBLIC_READINESS.md).
 
 For ordinary bugs, [open an issue](https://github.com/mgelsinger/watch-it/issues). Include your app version, installation method, and steps to reproduce. [Security reporting](SECURITY.md) · [Data and privacy](docs/PRIVACY.md).
 

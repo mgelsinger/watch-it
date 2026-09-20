@@ -93,3 +93,25 @@ test('recommendation failures support retry and empty results offer explicit cha
   await page.getByRole('button', { name: 'No time limit' }).click();
   expect(calls).toBe(3);
 });
+
+test('missing mood choices preserve saved filters and can be retried; service search explains no matches', async ({ page }) => {
+  await page.request.post('/api/auth/login', { data: { password: 'browser-fixture-password' } });
+  await page.request.put('/api/settings', { data: { pick_constraints: JSON.stringify({ genres: ['comedy'] }) } });
+  let genreCalls = 0;
+  await page.route('**/api/browse/genres', (route) => ++genreCalls === 1
+    ? route.fulfill({ status: 502, json: { error: 'Provider temporarily unavailable.' } })
+    : route.fulfill({ json: { genres: [{ key: 'comedy', name: 'Comedy' }] } }));
+  await page.route('**/api/providers', (route) => route.fulfill({ json: { region: 'US', providers: [{ provider_id: 8, provider_name: 'Netflix', enabled: true }] } }));
+  await page.goto('/pick');
+  await expect(page.getByRole('alert')).toContainText('Provider temporarily unavailable');
+  await expect(page.getByText(/Saved mood filters still apply: comedy/)).toBeVisible();
+  await page.getByRole('button', { name: 'Retry mood choices' }).click();
+  await expect(page.getByRole('button', { name: 'Light / comedy' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByText(/Saved mood filters still apply/)).toHaveCount(0);
+  await page.locator('summary').filter({ hasText: 'Choose your streaming services' }).click();
+  await page.getByLabel('Find your streaming service').fill('no matching service');
+  await expect(page.getByRole('status')).toContainText('No services match this search in US');
+  await page.getByRole('button', { name: 'Clear service search' }).click();
+  await expect(page.getByLabel('Use Netflix', { exact: true })).toBeChecked();
+  await page.request.put('/api/settings', { data: { pick_constraints: '{}' } });
+});

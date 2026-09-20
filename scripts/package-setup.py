@@ -58,7 +58,7 @@ Use the upgrade guide for an existing installation; moving to a new Compose proj
     output = image_archive.with_suffix(".zip")
     include = [
         "docs/INSTALL.md", "docs/OPERATIONS.md", "docs/PRIVACY.md",
-        "docs/ATTRIBUTION.md", "docs/DEPENDENCY_REVIEW.md", "docs/RELEASE_NOTES.md",
+        "docs/ATTRIBUTION.md", "docs/PROVIDERS.md", "docs/DEPENDENCY_REVIEW.md", "docs/RELEASE_NOTES.md",
         "SECURITY.md", "docker-compose.https.yml", "deploy/Caddyfile", "web/public/tmdb-logo.svg",
     ]
     if (root / "LICENSE").is_file():

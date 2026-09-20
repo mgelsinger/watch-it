@@ -10,6 +10,8 @@ Watch It brings discovery and personal tracking into one self-hosted app. Tell P
 
 It does not host or play video, and you do not need video files. Playback happens on your streaming service. Watch It may suit you if you want one watchlist across services, visible episode progress, and a library you can export and keep on your own computer or home server.
 
+JustWatch and watch-tracking apps such as Trakt already solve much of this problem. Watch It is another option for people who prefer to self-host this suggestion-to-watchlist-to-progress workflow. Episode tracking is manual. Jellyfin is a personal media server for hosting and playing files; Watch It serves a different purpose.
+
 Setup uses Docker and your own TMDB API key. Settings links to the key application and gives you a field to paste the key into. OMDb ratings are optional. There is one shared library per installation, not separate user accounts. Availability and audio information depend on provider coverage; Light / comedy is a genre filter, not a guarantee about a title's tone.
 
 The README includes screenshots and a small downloadable sample demo with fictional content that you can try without installing the app. I'd welcome feedback on first-time setup, Pick For Me, and tracking progress on a phone.

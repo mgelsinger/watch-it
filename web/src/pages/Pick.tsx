@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { api, img } from '../api';
+import { api, img, useApi } from '../api';
 import type { BrowseGenre, PickCandidate, PickConstraints, PickResult, PickSessionState, TitleDetail } from '../types';
 import VersionPreferences from '../components/VersionPreferences';
 import VersionNote from '../components/VersionNote';
@@ -76,7 +76,8 @@ export default function Pick() {
   const location = useLocation();
   const restored = (location.state as { pickSession?: PickSessionState } | null)?.pickSession;
   const [constraints, setConstraints] = useState<PickConstraints | null>(restored?.constraints ?? null);
-  const [genres, setGenres] = useState<BrowseGenre[]>([]);
+  const genreList = useApi<{ genres: BrowseGenre[] }>('/api/browse/genres');
+  const genres = genreList.data?.genres ?? [];
   const [stage, setStage] = useState<'form' | 'loop'>(restored ? 'loop' : 'form');
   const [result, setResult] = useState<PickResult | null>(restored?.result ?? null);
   const [busy, setBusy] = useState(false);
@@ -93,9 +94,6 @@ export default function Pick() {
         })
         .catch(() => setConstraints(DEFAULTS));
     }
-    void api<{ genres: BrowseGenre[] }>('/api/browse/genres')
-      .then((response) => setGenres(response.genres))
-      .catch(() => {});
   }, []);
 
   const fetchNext = async (nextConstraints: PickConstraints, exclude: string[]) => {
@@ -307,8 +305,13 @@ export default function Pick() {
                   {genre.name === 'Comedy' ? 'Light / comedy' : genre.name}
                 </button>
               ))}
-              {genres.length === 0 && <span className="muted">Genre list unavailable. Any mood will be used.</span>}
             </div>
+            {genreList.loading && <p className="muted">Loading mood choices...</p>}
+            {!genreList.loading && (genreList.error || genres.length === 0) && <div role="alert">
+              <p>Mood choices unavailable.{genreList.error && ` ${genreList.error}`}</p>
+              <button onClick={genreList.reload}>Retry mood choices</button>{' '}<Link to="/settings">Check TMDB key</Link>
+            </div>}
+            {constraints.genres.length > 0 && genres.length === 0 && <p className="faint">Saved mood filters still apply: {constraints.genres.join(', ')}. Retry to view the choices, or clear them above.</p>}
           </div>
 
           <PickServices onSelect={() => setConstraints((current) => current ? { ...current, my_services_only: true } : current)} />

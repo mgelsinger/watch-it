@@ -42,7 +42,7 @@ try:
     with ZipFile(archive) as bundle:
         names = set(bundle.namelist())
         required = {"docker-compose.yml", ".env.example", "START_HERE.md",
-                    "docs/INSTALL.md", "docs/OPERATIONS.md", f"watch-it-{version}-linux-amd64.tar"}
+                    "docs/INSTALL.md", "docs/OPERATIONS.md", "docs/PROVIDERS.md", f"watch-it-{version}-linux-amd64.tar"}
         assert required <= names, "Missing setup files"
         assert ".env" not in names, "A private .env must never be packaged"
         for entry in bundle.infolist():
