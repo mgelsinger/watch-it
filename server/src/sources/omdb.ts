@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { config, localToday } from '../config.js';
 import { getSetting, setSetting } from '../db.js';
 import { fetchJson, HttpError, QuotaError } from '../http.js';
+import { getCredential, validateCredential } from '../services/credentials.js';
 
 // Quota accounting: OMDb free tier allows 1,000 requests/day. We track our own
 // usage in settings and stop at a safety margin; callers queue and retry later.
@@ -23,7 +24,7 @@ export interface OmdbRatings {
 }
 
 export function omdbConfigured(): boolean {
-  return !!config.omdbKey;
+  return !!getCredential('omdb');
 }
 
 function usedToday(): number {
@@ -47,13 +48,14 @@ export function omdbQuotaRemaining(): number {
  * wrong matches). Throws QuotaError when the daily budget is exhausted.
  */
 export async function getRatings(imdbId: string): Promise<OmdbRatings> {
-  if (!config.omdbKey) throw new QuotaError('OMDb API key is not configured');
+  const key = getCredential('omdb');
+  if (!key) throw new QuotaError('OMDb API key is not configured');
   if (omdbQuotaRemaining() <= 0) throw new QuotaError('OMDb daily budget exhausted; deferred');
 
   let raw: unknown;
   try {
     recordUse();
-    raw = await fetchJson('omdb', `https://www.omdbapi.com/?apikey=${encodeURIComponent(config.omdbKey)}&i=${encodeURIComponent(imdbId)}`);
+    raw = await fetchJson('omdb', `https://www.omdbapi.com/?apikey=${encodeURIComponent(key)}&i=${encodeURIComponent(imdbId)}`);
   } catch (err) {
     if (err instanceof HttpError && err.status === 401) {
       // 401 = invalid key OR daily limit reached. Either way, stop for today.
@@ -89,6 +91,8 @@ export async function getRatings(imdbId: string): Promise<OmdbRatings> {
   };
 }
 
-export async function testKey(): Promise<void> {
-  await getRatings('tt0111161'); // The Shawshank Redemption
+export async function testKey(key = getCredential('omdb')): Promise<void> {
+  if (omdbQuotaRemaining() <= 0) throw new HttpError('OMDb daily budget exhausted. Try again tomorrow.', 429);
+  recordUse();
+  await validateCredential('omdb', key);
 }

@@ -5,6 +5,37 @@ import { config } from '../config.js';
 import { dbPath, getDb } from '../db.js';
 import { APP_VERSION } from '../version.js';
 import { createBackup } from './backup.js';
+import { expireProviderMetadata } from './retention.js';
+
+/** Only app-created recovery files qualify. Never follow symlinks or recurse. */
+export function pruneManagedRecoveryFiles(dataDir: string, backupDir?: string, now = Date.now()): void {
+  const cutoff = now - 30 * 86400_000;
+  const prune = (directory: string, pattern: RegExp) => {
+    if (!fs.existsSync(directory)) return;
+    const directoryStat = fs.lstatSync(directory);
+    if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) return;
+    for (const name of fs.readdirSync(directory)) {
+      if (!pattern.test(name)) continue;
+      const filename = path.join(directory, name);
+      const stat = fs.lstatSync(filename);
+      if (stat.isFile() && !stat.isSymbolicLink() && stat.mtimeMs < cutoff) fs.unlinkSync(filename);
+    }
+  };
+  prune(path.join(dataDir, 'snapshots'), /^pre-upgrade-[\dTZ-]+\.db$/);
+  prune(path.join(dataDir, 'backups'), /^before-restore-[\dTZ-]+\.watchit\.json$/);
+  if (backupDir) {
+    try { prune(backupDir, /^scheduled-[\dTZ-]+\.watchit\.json$/); }
+    catch { maintenanceState.backup_error = 'Backup cleanup failed. Check directory permissions.'; }
+  }
+  if (!fs.existsSync(dataDir) || fs.lstatSync(dataDir).isSymbolicLink()) return;
+  for (const name of fs.readdirSync(dataDir)) {
+    if (!/^before-rollback-\d+$/.test(name)) continue;
+    const directory = path.join(dataDir, name);
+    if (!fs.lstatSync(directory).isDirectory() || fs.lstatSync(directory).isSymbolicLink()) continue;
+    prune(directory, /^watch-it\.db(?:-wal|-shm)?$/);
+    if (fs.readdirSync(directory).length === 0) fs.rmdirSync(directory);
+  }
+}
 
 export const maintenanceState = { last_backup_at: null as string | null, backup_error: null as string | null };
 
@@ -55,6 +86,8 @@ export function scheduledBackup(directory: string, retention: number): void {
 }
 
 export function runMaintenance(): void {
+  expireProviderMetadata(getDb());
+  pruneManagedRecoveryFiles(config.dataDir, config.backupDirectory);
   pruneImages(config.dataDir, config.imageCacheMb * 1024 * 1024, config.imageCacheDays);
   if (!config.backupDirectory) return;
   try { scheduledBackup(config.backupDirectory, config.backupRetention); }

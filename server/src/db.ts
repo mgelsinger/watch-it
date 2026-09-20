@@ -18,6 +18,7 @@ export function getDb(): DB {
   db = new Database(dbPath());
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+  db.pragma('secure_delete = ON');
   db.pragma('busy_timeout = 5000');
   return db;
 }
@@ -88,6 +89,10 @@ export function cacheGet(key: string, maxAgeMs: number): { payload: unknown; fet
     | undefined;
   if (!row) return null;
   const age = Date.now() - Date.parse(row.fetched_at);
+  if (!Number.isFinite(age) || age > 30 * 86400_000) {
+    getDb().prepare('DELETE FROM api_cache WHERE key = ?').run(key);
+    return null;
+  }
   return { payload: JSON.parse(row.payload), fetchedAt: row.fetched_at, fresh: age < maxAgeMs };
 }
 

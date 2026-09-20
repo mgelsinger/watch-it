@@ -20,7 +20,7 @@ export const config = {
   authPassword: process.env.WATCH_IT_PASSWORD || '',
   authSecureCookie: process.env.WATCH_IT_SECURE_COOKIE === 'true',
   imageCacheMb: Math.max(16, Math.min(4096, Number(process.env.IMAGE_CACHE_MB) || 256)),
-  imageCacheDays: Math.max(1, Math.min(3650, Number(process.env.IMAGE_CACHE_DAYS) || 90)),
+  imageCacheDays: Math.max(1, Math.min(90, Number(process.env.IMAGE_CACHE_DAYS) || 90)),
   backupDirectory: process.env.BACKUP_DIR || '',
   backupRetention: Math.max(1, Math.min(365, Math.floor(Number(process.env.BACKUP_RETENTION) || 7))),
   // Safety margin under OMDb's 1,000/day free-tier limit.

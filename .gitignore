@@ -13,3 +13,6 @@ Thumbs.db
 artifacts/
 playwright-report/
 test-results/
+__pycache__/
+credentials.json
+credentials-*.tmp

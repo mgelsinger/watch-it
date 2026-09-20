@@ -13,7 +13,7 @@ services:
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8300}:8300"
     environment:
-      TMDB_API_KEY: ${TMDB_API_KEY}
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
       OMDB_API_KEY: ${OMDB_API_KEY:-}
       WATCH_IT_PASSWORD: ${WATCH_IT_PASSWORD:-}
       WATCH_IT_SECURE_COOKIE: ${WATCH_IT_SECURE_COOKIE:-false}

@@ -32,7 +32,7 @@ export async function pickRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(tmdb.tmdbConfigured() ? 502 : 503).send({
         error: tmdb.tmdbConfigured()
           ? `TMDB is unavailable and no cached recommendations match: ${message}`
-          : 'TMDB API key is not configured and no cached recommendations are available',
+          : 'Add your TMDB API key in Settings > API keys, then choose your region and services. No cached recommendations are available yet.',
       });
     }
   });

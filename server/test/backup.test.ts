@@ -55,6 +55,9 @@ test('profile backup is checksummed and preserves watched progress by stable ide
   assert.equal(inspected.preview.watched_episodes, 1);
   assert.equal(inspected.preview.never_suggest, 1);
   assert.equal(backup.profile.titles.some((title) => title.record.tmdb_id === 603), false);
+  assert.equal(backup.version, 3);
+  assert.ok(!JSON.stringify(backup).includes('Game of Thrones'));
+  assert.ok(!JSON.stringify(backup).includes('Winter Is Coming'));
 
   const target = database();
   restoreBackup(target, backup, 'merge');
@@ -96,6 +99,7 @@ test('merge restore does not clear newer watched data', () => {
   `).get(titleId) as Record<string, unknown>;
   assert.deepEqual(state, { status: 'watched', watched_at: '2026-07-10T21:00:00Z' });
   assert.deepEqual(episode, { watched_at: '2026-07-10T20:00:00Z' });
+  assert.equal((target.prepare('SELECT name FROM titles').get() as {name:string}).name, 'Game of Thrones');
 
   source.close();
   target.close();
@@ -156,6 +160,25 @@ test('legacy version 1 exports can still be inspected and restored', () => {
   const restored = target.prepare(`
     SELECT t.name, us.status, us.watched_at FROM titles t JOIN user_state us ON us.title_id = t.id
   `).get();
-  assert.deepEqual(restored, { name: 'The Matrix', status: 'watched', watched_at: '2025-12-31T22:00:00Z' });
+  assert.deepEqual(restored, { name: 'TMDB movie 603', status: 'watched', watched_at: '2025-12-31T22:00:00Z' });
+  target.close();
+});
+
+test('version 2 imports verify their original checksum but never revive old provider content', () => {
+  const fixture = JSON.parse(fs.readFileSync(new URL('./fixtures/profile-v2.json', import.meta.url), 'utf8'));
+  const inspected = inspectBackup(fixture);
+  assert.equal(inspected.preview.version, 2);
+  assert.equal(inspected.preview.checksum_verified, true);
+  assert.equal(inspected.preview.watched_episodes, 1);
+  assert.ok(!JSON.stringify(inspected.document.profile).includes('Old provider'));
+  const target = database();
+  restoreBackup(target, fixture, 'replace');
+  assert.deepEqual(target.prepare('SELECT name, overview, metadata_refreshed_at FROM titles').get(), {
+    name: 'TMDB tv 912345', overview: null, metadata_refreshed_at: null,
+  });
+  assert.deepEqual(target.prepare('SELECT notes, user_rating FROM user_state').get(), { notes: 'My private note', user_rating: 8 });
+  assert.deepEqual(target.prepare('SELECT episode_number, name, watched_at FROM episodes').get(), {
+    episode_number: 2, name: null, watched_at: '2026-09-01T00:00:00Z',
+  });
   target.close();
 });

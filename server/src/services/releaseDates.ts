@@ -1,4 +1,5 @@
 import { getDb, cacheGet, cacheSet } from '../db.js';
+import { nowIso } from '../config.js';
 import * as tmdb from '../sources/tmdb.js';
 
 const WEEK = 7 * 86400_000;
@@ -19,11 +20,11 @@ export function upsertReleaseDates(tmdbId: number, region: string, regions: tmdb
     if (!prev || date < prev) byType.set(rd.type, date);
   }
   const stmt = db.prepare(`
-    INSERT INTO release_dates (tmdb_id, region, type, date) VALUES (?, ?, ?, ?)
-    ON CONFLICT(tmdb_id, region, type) DO UPDATE SET date = excluded.date
+    INSERT INTO release_dates (tmdb_id, region, type, date, metadata_cached_at) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(tmdb_id, region, type) DO UPDATE SET date = excluded.date, metadata_cached_at = excluded.metadata_cached_at
   `);
   const run = db.transaction(() => {
-    for (const [type, date] of byType) stmt.run(tmdbId, region, type, date);
+    for (const [type, date] of byType) stmt.run(tmdbId, region, type, date, nowIso());
   });
   run();
 }

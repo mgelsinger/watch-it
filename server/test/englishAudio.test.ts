@@ -46,6 +46,7 @@ test('newer negative audio evidence supersedes dated evidence; older misses do n
   cacheSet('english_audio:v1:tv:93405', null);
   getDb().prepare("UPDATE api_cache SET fetched_at = '2025-01-01T00:00:00Z'").run();
   assert.equal(englishVersion('tv', 93405, 'ko').audio, 'dub');
+  cacheSet('english_audio:v1:tv:93405', null);
   getDb().prepare("UPDATE api_cache SET fetched_at = '2027-01-01T00:00:00Z'").run();
   assert.equal(englishVersion('tv', 93405, 'ko').audio, 'unknown');
 });

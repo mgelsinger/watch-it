@@ -1,6 +1,11 @@
 {
-  "code_license": null,
-  "security_contact": null,
+  "code_license": "MIT",
+  "security_contact": "https://github.com/mgelsinger/watch-it/security/advisories/new",
+  "provider_terms_review": {
+    "status": "approved",
+    "record": "docs/PROVIDERS.md"
+  },
   "support_url": "https://github.com/mgelsinger/watch-it/issues",
-  "distribution": "docker-archive"
+  "distribution": "docker-archive",
+  "security_reporting": "enable-and-verify-at-publication"
 }

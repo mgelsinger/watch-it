@@ -370,6 +370,7 @@ export default function Title() {
         <div>
           <div className="panel">
             <h3>Scores</h3>
+            {!t.metadata_refreshed_at && <p role="status">Title details need a refresh. Your saved status and watched episodes are still here. Select Refresh to download details with your TMDB key.</p>}
             <Scores rt={t.rt_score} imdb={t.imdb_rating} mc={t.metacritic} tmdb={t.tmdb_rating} ratingsRefreshedAt={t.ratings_refreshed_at} />
           </div>
 

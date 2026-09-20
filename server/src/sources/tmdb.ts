@@ -1,17 +1,25 @@
 import { z } from 'zod';
-import { config } from '../config.js';
-import { fetchJson } from '../http.js';
+import { getCredential, validateCredential } from '../services/credentials.js';
+import { fetchJson, HttpError } from '../http.js';
 
 const BASE = 'https://api.themoviedb.org/3';
 
 export function tmdbConfigured(): boolean {
-  return !!config.tmdbKey;
+  return !!getCredential('tmdb');
 }
 
 async function tmdb(path: string, params: Record<string, string> = {}): Promise<unknown> {
-  if (!config.tmdbKey) throw new Error('TMDB API key is not configured');
-  const qs = new URLSearchParams({ api_key: config.tmdbKey, ...params });
-  return fetchJson('tmdb', `${BASE}${path}?${qs}`);
+  const key = getCredential('tmdb');
+  if (!key) throw new HttpError('Add your TMDB API key in Settings > API keys, then choose your region and services.', 503);
+  const qs = new URLSearchParams({ api_key: key, ...params });
+  try {
+    return await fetchJson('tmdb', `${BASE}${path}?${qs}`);
+  } catch (error) {
+    if (error instanceof HttpError && [401, 403].includes(error.status)) {
+      throw new HttpError('TMDB rejected the API key. Open Settings > API keys to test or replace it with the API Key from your TMDB account.', 502);
+    }
+    throw error;
+  }
 }
 
 // ---- zod schemas: intentionally loose; unknown fields pass through, most fields optional.
@@ -330,5 +338,5 @@ export async function searchTv(query: string): Promise<{ id: number; name?: stri
 }
 
 export async function testKey(): Promise<void> {
-  await tmdb('/configuration');
+  await validateCredential('tmdb', getCredential('tmdb'));
 }

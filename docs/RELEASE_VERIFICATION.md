@@ -1,5 +1,9 @@
 # Self-install candidate verification
 
+For the community-launch candidate that extends draft PR #1, use [COMMUNITY_LAUNCH.md](COMMUNITY_LAUNCH.md). The records below describe earlier candidates and are retained for history.
+
+The September 11 screenshot, installation-guide, configuration-recovery, complete-ZIP packaging, and credential-review results are recorded in [PUBLIC_READINESS.md](PUBLIC_READINESS.md). The historical image and checksums below identify the earlier candidate and should not be used for the new preparation build.
+
 Verified September 10, 2026. App version: 1.0.0 from root `package.json`.
 
 The candidate was built and tested locally on Windows with Docker Desktop running Linux x86-64 containers. The existing personal installation was not restarted or migrated. All installation/recovery checks used disposable volumes and fixture profiles.

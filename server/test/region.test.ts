@@ -38,11 +38,14 @@ test('current Home, Library and detail offers follow the active region while his
 
 test('provider failures preserve dates and distinguish unavailable from a successful empty response', async (t) => {
   cacheSet('tmdb_providers:US:tv:1', { offers: [{ provider_id: 8, provider_name: 'Netflix', offer_type: 'flatrate', logo_path: null }] });
-  getDb().prepare("UPDATE api_cache SET fetched_at = '2020-01-01T00:00:00Z'").run();
+  const checkedAt = new Date(Date.now() - 2 * 86400_000).toISOString();
+  getDb().prepare("UPDATE api_cache SET fetched_at = ?").run(checkedAt);
   t.mock.method(globalThis, 'fetch', async () => new Response('', { status: 403 }));
   const stale = await getExternalOffers('tv', 1);
   assert.equal(stale.availability_check.status, 'stale');
-  assert.equal(stale.availability_check.checked_at, '2020-01-01T00:00:00Z');
+  assert.equal(stale.availability_check.checked_at, checkedAt);
+  getDb().prepare("UPDATE api_cache SET fetched_at = '2020-01-01T00:00:00Z'").run();
+  assert.equal((await getExternalOffers('tv', 1)).availability_check.status, 'unavailable');
   assert.equal(stale.offers.length, 1);
   const missing = await getExternalOffers('tv', 2);
   assert.equal(missing.availability_check.status, 'unavailable');

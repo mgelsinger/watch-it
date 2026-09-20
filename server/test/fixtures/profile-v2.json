@@ -1,0 +1,65 @@
+{
+  "app": "watch-it",
+  "format": "profile-backup",
+  "version": 2,
+  "app_version": "1.0.0",
+  "exported_at": "2026-09-01T00:00:00Z",
+  "counts": {},
+  "checksum": {
+    "algorithm": "sha256",
+    "value": "7f2f20af7fb72fc13481c4413a16afe53a4474a999d8b917f7d6f33f081fca2e"
+  },
+  "profile": {
+    "titles": [
+      {
+        "record": {
+          "tmdb_id": 912345,
+          "media_type": "tv",
+          "name": "Old provider title",
+          "overview": "Old provider plot",
+          "added_at": "2020-01-01T00:00:00Z"
+        },
+        "state": {
+          "status": "watching",
+          "notes": "My private note",
+          "user_rating": 8,
+          "updated_at": "2026-09-01T00:00:00Z"
+        },
+        "seasons": [
+          {
+            "record": {
+              "season_number": 1,
+              "name": "Old provider season"
+            },
+            "episodes": [
+              {
+                "episode_number": 2,
+                "name": "Old provider episode",
+                "watched_at": "2026-09-01T00:00:00Z"
+              }
+            ]
+          }
+        ],
+        "cast": [],
+        "availability": [],
+        "events": []
+      }
+    ],
+    "my_services": [
+      {
+        "provider_id": 8,
+        "enabled": 1
+      }
+    ],
+    "settings": [
+      {
+        "key": "region",
+        "value": "US"
+      }
+    ],
+    "suggestion_log": [],
+    "suggestion_suppressions": [],
+    "release_dates": [],
+    "unlinked_events": []
+  }
+}

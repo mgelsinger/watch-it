@@ -1,11 +1,13 @@
 import { useRef, useState } from 'react';
 import { api, img, useApi } from '../api';
 import type { Provider, SyncLogRow, SyncState } from '../types';
+import ApiKeyField from '../components/ApiKeyField';
 
 interface SettingsData {
   supported_regions: string[];
   settings: Record<string, string>;
   keys: { tmdb: boolean; omdb: boolean };
+  managed_keys?: { tmdb: boolean; omdb: boolean };
   omdb_quota_remaining: number | null;
   db: { path: string; size_bytes: number };
 }
@@ -52,9 +54,9 @@ function KeyTest({ source, label, present }: { source: string; label: string; pr
     setResult(null);
     try {
       const res = await api<{ ok: boolean; error?: string }>(`/api/settings/test/${source}`, { method: 'POST' });
-      setResult(res.ok ? '✓ working' : `✗ ${res.error}`);
+      setResult(res.ok ? 'Working' : `Failed: ${res.error}`);
     } catch (e) {
-      setResult(`✗ ${(e as Error).message}`);
+      setResult(`Failed: ${(e as Error).message}`);
     } finally {
       setBusy(false);
     }
@@ -64,7 +66,7 @@ function KeyTest({ source, label, present }: { source: string; label: string; pr
       <span className="k">{label}</span>
       <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         {present !== null && (
-          <span className={present ? '' : 'muted'}>{present ? 'key present' : 'no key (set in .env)'}</span>
+          <span className={present ? '' : 'muted'}>{present ? 'key configured' : 'no key saved'}</span>
         )}
         {result && <span className="faint">{result}</span>}
         <button onClick={() => void test()} disabled={busy || present === false}>{busy ? 'testing…' : 'test'}</button>
@@ -177,7 +179,7 @@ export default function Settings() {
       const result = await api<{ ok: boolean; preview: BackupPreview; safety_backup: string }>('/api/backup/restore', {
         json: { backup: selectedBackup, mode },
       });
-      setBackupMsg(`Restore complete. ${result.preview.titles} titles are in the imported backup. A safety copy of the previous profile was kept.`);
+      setBackupMsg(`Restore complete. ${result.preview.titles} titles are in the imported backup. Select Refresh all to download title details and artwork. A safety copy of the previous profile was kept.`);
       setSelectedBackup(null);
       setBackupPreview(null);
       reload();
@@ -191,7 +193,7 @@ export default function Settings() {
   };
 
   if (error) return <p role="alert">Settings unavailable: {error} <button onClick={reload}>Retry</button></p>;
-  if (loading || !data) return <p className="muted">Loading...</p>;
+  if (loading && !data || !data) return <p className="muted">Loading...</p>;
 
   const filteredProviders = (providers.data?.providers ?? []).filter((p) =>
     p.provider_name.toLowerCase().includes(providerFilter.toLowerCase()),
@@ -201,14 +203,17 @@ export default function Settings() {
   return (
     <div className="settings-section">
       <h1>Settings</h1>
+      <p>One shared library per installation. Everyone with access can view and change its titles, progress, settings and API keys.</p>
       {diagnostics.data?.scheduled_backups && <p role="status">Scheduled backups: {diagnostics.data.backup_error ?? (diagnostics.data.last_backup_at ? `last success ${diagnostics.data.last_backup_at}` : 'waiting for the next daily refresh')}.</p>}
       <p><a href="/api/diagnostics" target="_blank" rel="noreferrer">Review support diagnostics</a>. This local report contains installation status, with no library contents or credentials. Nothing is uploaded.</p>
       {settingsError && <p role="alert">{settingsError}</p>}
-      {!data.keys.tmdb && <div className="stale-note" role="status">To get started, set your TMDB key in the installation environment and restart the app. Then test the key below, choose your region, and optionally select your services. Your library is preserved.</div>}
+      {!data.keys.tmdb && <div className="stale-note" role="status">Start here: paste your TMDB API key below. Then choose your country and streaming services. No video files or streaming-service passwords are needed. <a href="/demo/">Try the sample demo</a> first if you prefer.</div>}
       <p className="muted">Subscriptions describe services you use. Browse and Pick exclusions let you leave specific services out of a search. You can change these settings at any time.</p>
 
       <div className="panel">
         <h3>API keys</h3>
+        <ApiKeyField source="tmdb" present={data.keys.tmdb} managed={data.managed_keys?.tmdb ?? false} onSaved={() => { reload(); providers.reload(); }} />
+        <ApiKeyField source="omdb" present={data.keys.omdb} managed={data.managed_keys?.omdb ?? false} onSaved={() => { reload(); providers.reload(); }} />
         <KeyTest source="tmdb" label="TMDB (metadata, posters, providers)" present={data.keys.tmdb} />
         <KeyTest source="omdb" label="OMDb (RT / IMDb / Metacritic scores)" present={data.keys.omdb} />
         <KeyTest source="tvmaze" label="TVmaze (broadcast schedule, no key needed)" present={null} />
@@ -218,20 +223,20 @@ export default function Settings() {
             <span>{data.omdb_quota_remaining} requests</span>
           </div>
         )}
-        <p className="faint">Keys are read from the .env file at startup; edit it and restart the container to change them.</p>
+        <p className="faint">Keys saved here work immediately and stay in a private file on your server, outside profile exports. They are not encrypted on disk; protect the data volume. The server sends each key only to its provider. Use HTTPS when accessing Settings over a network.</p>
       </div>
 
       <div className="panel">
         <h3>Region & schedule</h3>
         <div className="kv">
           <span className="k">Watch-provider region</span>
-          <select value={data.settings.region} onChange={(e) => void saveSetting('region', e.target.value)}>
+          <select aria-label="Watch-provider region" value={data.settings.region} onChange={(e) => void saveSetting('region', e.target.value)}>
             {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
         </div>
         <div className="kv">
           <span className="k">Broadcast schedule country (TVmaze)</span>
-          <select value={data.settings.schedule_country} onChange={(e) => void saveSetting('schedule_country', e.target.value)}>
+          <select aria-label="Broadcast schedule country" value={data.settings.schedule_country} onChange={(e) => void saveSetting('schedule_country', e.target.value)}>
             {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
         </div>
@@ -284,7 +289,7 @@ export default function Settings() {
         <h3>Data safety</h3>
         <p className="faint" style={{ marginTop: 0 }}>
           Keep a portable copy of your library, watched episodes, lists, ratings, notes, preferences, and Never Suggest choices.
-          Save the file to your NAS or another safe location. It can restore a fresh Watch It installation on Windows or Linux.
+          Save the file to your NAS or another safe location. It contains your title IDs, lists, watched episodes, ratings, notes, and preferences. Provider descriptions, posters, cast, and availability are downloaded again after restore. API keys are never included.
         </p>
         <div className="kv">
           <span className="k">Database file</span>

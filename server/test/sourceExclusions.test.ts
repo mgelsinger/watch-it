@@ -158,7 +158,7 @@ test('the regional provider catalog is cached and survives refresh failures', as
   assert.equal(requests.length, 2);
   await regionalProviders();
   assert.equal(requests.length, 2);
-  getDb().exec("UPDATE api_cache SET fetched_at = '2020-01-01T00:00:00Z' WHERE key = 'tmdb_providers:US'");
+  getDb().prepare("UPDATE api_cache SET fetched_at = ? WHERE key = 'tmdb_providers:US'").run(new Date(Date.now() - 8 * 86400_000).toISOString());
   t.mock.method(globalThis, 'fetch', async () => Response.json({}, { status: 400 }));
   assert.equal((await regionalProviders()).length, providers.length);
 });

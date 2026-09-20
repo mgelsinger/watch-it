@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { api, img } from '../api';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { api, img, useApi } from '../api';
 import type { BrowseGenre, PickCandidate, PickConstraints, PickResult, PickSessionState, TitleDetail } from '../types';
 import VersionPreferences from '../components/VersionPreferences';
 import VersionNote from '../components/VersionNote';
 import ServiceExclusions from '../components/ServiceExclusions';
 import AvailabilityNote from '../components/AvailabilityNote';
+import PickServices from '../components/PickServices';
 
 const DEFAULTS: PickConstraints = {
   time: 60,
@@ -24,7 +25,7 @@ const TIME_OPTIONS: { label: string; value: number | null }[] = [
   { label: '45 min', value: 45 },
   { label: '60 min', value: 60 },
   { label: '90 min', value: 90 },
-  { label: '2h+', value: 150 },
+  { label: '2h 30', value: 150 },
   { label: 'No limit', value: null },
 ];
 
@@ -52,7 +53,9 @@ function normalizeSaved(raw: string | undefined): PickConstraints {
 }
 
 function runtimeLine(candidate: PickCandidate): string {
-  return `${candidate.runtime} min${candidate.runtime_estimated ? ' estimated' : ''}`;
+  if (candidate.runtime_estimated) return 'Runtime not provided by TMDB.';
+  if (candidate.runtime_basis === 'first_episode') return `${candidate.runtime} min for S1E1 (other episodes may differ)`;
+  return `${candidate.runtime} min${candidate.media_type === 'tv' ? ' per episode (listed; episodes vary)' : ''}`;
 }
 
 function sourceLabel(candidate: PickCandidate): string {
@@ -73,7 +76,8 @@ export default function Pick() {
   const location = useLocation();
   const restored = (location.state as { pickSession?: PickSessionState } | null)?.pickSession;
   const [constraints, setConstraints] = useState<PickConstraints | null>(restored?.constraints ?? null);
-  const [genres, setGenres] = useState<BrowseGenre[]>([]);
+  const genreList = useApi<{ genres: BrowseGenre[] }>('/api/browse/genres');
+  const genres = genreList.data?.genres ?? [];
   const [stage, setStage] = useState<'form' | 'loop'>(restored ? 'loop' : 'form');
   const [result, setResult] = useState<PickResult | null>(restored?.result ?? null);
   const [busy, setBusy] = useState(false);
@@ -90,9 +94,6 @@ export default function Pick() {
         })
         .catch(() => setConstraints(DEFAULTS));
     }
-    void api<{ genres: BrowseGenre[] }>('/api/browse/genres')
-      .then((response) => setGenres(response.genres))
-      .catch(() => {});
   }, []);
 
   const fetchNext = async (nextConstraints: PickConstraints, exclude: string[]) => {
@@ -244,6 +245,7 @@ export default function Pick() {
         {stage === 'loop' && <button onClick={() => setStage('form')}>Adjust filters</button>}
         <button onClick={() => navigate('/')} aria-label="Close">Close</button>
       </div>
+      <p className="muted">Find your next watch and keep your place. Choose a time, a mood and your services. Watch It helps you decide; playback happens on your streaming service.</p>
 
       {stage === 'form' && (
         <div className="pick-form">
@@ -254,6 +256,7 @@ export default function Pick() {
                 <button
                   key={option.label}
                   className={`chip ${constraints.time === option.value ? 'on' : ''}`}
+                  aria-pressed={constraints.time === option.value}
                   onClick={() => setConstraints({ ...constraints, time: option.value })}
                 >
                   {option.label}
@@ -284,6 +287,7 @@ export default function Pick() {
                 <button className="pick-clear" onClick={() => setConstraints({ ...constraints, genres: [] })}>clear</button>
               )}
             </div>
+            <p className="faint">For something light, try Light / comedy. This uses the Comedy genre, so tone can vary.</p>
             <div className="pick-chips">
               {genres.map((genre) => (
                 <button
@@ -298,14 +302,22 @@ export default function Pick() {
                       : [...constraints.genres, genre.key],
                   })}
                 >
-                  {genre.name}
+                  {genre.name === 'Comedy' ? 'Light / comedy' : genre.name}
                 </button>
               ))}
-              {genres.length === 0 && <span className="muted">Genre list unavailable. Any mood will be used.</span>}
             </div>
+            {genreList.loading && <p className="muted">Loading mood choices...</p>}
+            {!genreList.loading && (genreList.error || genres.length === 0) && <div role="alert">
+              <p>Mood choices unavailable.{genreList.error && ` ${genreList.error}`}</p>
+              <button onClick={genreList.reload}>Retry mood choices</button>{' '}<Link to="/settings">Check TMDB key</Link>
+            </div>}
+            {constraints.genres.length > 0 && genres.length === 0 && <p className="faint">Saved mood filters still apply: {constraints.genres.join(', ')}. Retry to view the choices, or clear them above.</p>}
           </div>
 
-          <div className="pick-field">
+          <PickServices onSelect={() => setConstraints((current) => current ? { ...current, my_services_only: true } : current)} />
+
+          <details className="pick-field">
+            <summary>English versions (optional)</summary>
             <div className="pick-label">English versions</div>
             <VersionPreferences
               preferEnglish={!!constraints.prefer_english}
@@ -316,7 +328,7 @@ export default function Pick() {
                 include_adaptations: patch.includeAdaptations ?? constraints.include_adaptations,
               })}
             />
-          </div>
+          </details>
 
           <div className="pick-field pick-toggles">
             <label className="pill" style={{ cursor: 'pointer' }}>
@@ -366,15 +378,16 @@ export default function Pick() {
 
       {stage === 'loop' && (
         <div className="pick-loop">
-          {busy && !candidate && <p className="muted">Finding something available now...</p>}
+          {busy && !candidate && <p className="muted" role="status">Checking titles, runtimes and regional watch options...</p>}
           {notice && <div className="pick-notice" role="status">{notice}</div>}
           {result?.notice && <div className="pick-notice" role="status">{result.notice}</div>}
-          {error && <div className="empty"><h3>Recommendations unavailable</h3><p>{error}</p></div>}
+          {error && <div className="empty" role="alert"><h3>Recommendations unavailable</h3><p>{error}</p><button disabled={busy} onClick={() => void fetchNext(constraints, shown.current)}>Retry recommendation</button> <Link to="/settings">Check API keys and region</Link></div>}
 
           {result?.empty && !error && (
             <div className="empty">
               <h3>Nothing fits</h3>
               <p>{result.empty.message}</p>
+              <p><Link to="/settings">Check region and services</Link></p>
               <div className="pick-chips" style={{ justifyContent: 'center' }}>
                 {result.empty.loosen.map((option) => (
                   <button key={option.label} className="primary" onClick={() => loosen(option.patch)}>{option.label}</button>
@@ -400,7 +413,7 @@ export default function Pick() {
               <button
                 className="pick-details-hit"
                 aria-label={`Open full details for ${candidate.name}`}
-                title="Open full details. New titles are added to your Watchlist."
+                title="Preview full details without adding this title to your library."
                 disabled={busy}
                 onClick={() => void openDetails(candidate)}
               />
@@ -416,21 +429,24 @@ export default function Pick() {
                   {candidate.name} {candidate.year && <span className="muted">({candidate.year})</span>}
                 </h2>
                 <div className="muted">{runtimeLine(candidate)}</div>
-                {candidate.reasons.length > 0 && <div className="pick-reasons">{candidate.reasons.join(' | ')}</div>}
+                <p className="pick-overview">{candidate.overview ? (candidate.overview.length > 320 ? `${candidate.overview.slice(0, 317).trimEnd()}...` : candidate.overview) : 'No synopsis provided. Preview full details to learn more.'}</p>
+                {candidate.reasons.length > 0 && <div className="pick-reasons"><strong>Why this fits</strong><ul>{candidate.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></div>}
+                {constraints.genres.includes('comedy') && <p className="faint">Comedy is a genre match, not a guarantee of a light tone.</p>}
                 <VersionNote info={candidate.english_version} showUnknown={!!constraints.prefer_english} />
 
                 <div className="pick-providers" aria-label="Where to watch">
                   <AvailabilityNote check={candidate.availability_check} />
-                  {candidate.watch_url && <a href={candidate.watch_url} target="_blank" rel="noreferrer">Watch options on TMDB</a>}
+                  {candidate.watch_url ? <a href={candidate.watch_url} target="_blank" rel="noreferrer">Watch options on TMDB</a> : <span className="faint">No watch link provided. Search the listed service for this title.</span>}
                   {candidate.providers.map((offer) => (
                     <div className="pick-provider" key={offer.provider_id}>
                       {offer.logo_path && <img src={img(offer.logo_path, 'w45') ?? ''} alt="" />}
                       <span>{offer.provider_name}</span>
-                      {(offer.offer_type === 'rent' || offer.offer_type === 'buy') && <span className="faint">{offer.offer_type}</span>}
+                      <span className="faint">{{ flatrate: 'subscription', free: 'free', ads: 'with ads', rent: 'rental', buy: 'purchase' }[offer.offer_type]}</span>
                     </div>
                   ))}
                 </div>
                 {candidate.rent_buy_only && <div className="faint">Rental or purchase only</div>}
+                <p className="faint">{candidate.availability_check?.region && `Watch region: ${candidate.availability_check.region}. `}{candidate.availability_check?.checked_at && `Checked ${candidate.availability_check.checked_at.slice(0, 10)}. `}Confirm the plan, episode and audio on the service. Watch options opens a provider listing; Watch It does not play video.</p>
 
                 <div className="pick-actions">
                   <button disabled={busy} onClick={() => void saveAndContinue(candidate, 'saved')}>
@@ -439,7 +455,7 @@ export default function Pick() {
                   <button className="primary" disabled={busy} onClick={() => void saveAndContinue(candidate, 'wishlist')}>
                     Add to Watchlist
                   </button>
-                  <button disabled={busy} onClick={() => void saveAndContinue(candidate, 'watching')}>Start Watching</button>
+                  <button disabled={busy} onClick={() => void saveAndContinue(candidate, 'watching')}>Track as Watching</button>
                   <button disabled={busy} onClick={() => void saveAndContinue(candidate, 'watched')}>Already Watched</button>
                   <button disabled={busy} onClick={() => void next(candidate, 'shuffled')}>Shuffle</button>
                   <button disabled={busy} onClick={() => void next(candidate, 'skipped')}>Not Tonight</button>
@@ -454,7 +470,7 @@ export default function Pick() {
                   )}
                 </div>
                 <div className="faint" style={{ marginTop: 10 }}>
-                  {result!.pool_size} candidate{result!.pool_size === 1 ? '' : 's'} match your filters
+                  Based on a limited catalog sample. Watch offers and runtime are checked for each suggestion.
                 </div>
               </div>
             </div>
