@@ -50,7 +50,7 @@ The included `.env.example` already selects `WATCH_IT_IMAGE=watch-it:1.0.0`; run
 
 ## Restore or roll back
 
-For portable profile recovery, choose a JSON backup in Settings, review the preview, then choose merge or replace. Malformed files are rejected before changes. A complete safety copy is written before restore. Wait for an active refresh to finish first. The last five pre-restore safety copies are retained under `/data/backups`.
+For portable profile recovery, choose a JSON backup in Settings, review the preview, then choose merge or replace. Malformed files are rejected before changes. A complete safety copy is written before restore. Wait for an active refresh to finish first. Up to five pre-restore safety copies are retained under `/data/backups`, for at most 30 days. After restoring a profile, choose Refresh all to retrieve title details; personal progress is immediately available.
 
 For a failed application upgrade, stop the app. Use the new image's helper to restore the matching pre-upgrade snapshot:
 
@@ -65,7 +65,7 @@ If a disk/permission error interrupts filesystem replacement, leave the app stop
 
 ## Routine maintenance
 
-The daily refresh prunes cached images older than `IMAGE_CACHE_DAYS` or beyond `IMAGE_CACHE_MB` (defaults: 90 days, 256 MiB). It only removes recognized image-cache files, skipping symbolic links and other directories. Previously viewed images may need downloading again after eviction.
+The daily refresh prunes cached images older than `IMAGE_CACHE_DAYS` or beyond `IMAGE_CACHE_MB` (defaults: 90 days, 256 MiB; maximum age: 90 days). It only removes recognized image-cache files, skipping symbolic links and other directories. Previously viewed images may need downloading again after eviction.
 
 Set `BACKUP_DIR=/data/scheduled-backups` to enable a daily profile backup. `BACKUP_RETENTION` defaults to 7 completed scheduled files. Manual exports are unaffected. Settings shows the current process's last backup success or failure and links to a local, sanitized diagnostics report. The actual backup files persist across restarts. Files within the same Docker volume do not protect against loss of that volume; copy important backups to separate storage.
 
@@ -84,3 +84,15 @@ Caddy needs domain validation and inbound access appropriate to the certificate 
 Report ordinary bugs through the [repository issue tracker](https://github.com/mgelsinger/watch-it/issues). Include app version, platform, steps to reproduce, region, and title/provider identity if relevant. Review diagnostics before sharing. Do not attach `.env`, cookies, database snapshots, profile backups, or private notes. See [SECURITY.md](../SECURITY.md) for security reporting status and [PRIVACY.md](PRIVACY.md) for data flows.
 
 `docker compose down` stops and removes the container but keeps the named volume. Keep that volume and your external backups if you might reinstall. Do not use `down -v` during an update or routine uninstall; it deletes the installation's data volume. Removing the app does not delete your accounts or API keys at upstream providers.
+
+## Provider data and personal history
+
+Provider descriptions, artwork, cast, ratings, release dates and availability are temporary data. Saved title IDs, lists, notes, personal ratings, episode identities and watched dates are your history and do not expire. Startup after a long offline period and daily maintenance remove provider metadata older than 90 days; API responses and event payloads expire after 30 days. Images expire after at most 90 days, including at read time. Cached responses older than 30 days cannot be served as an offline fallback.
+
+Each season, episode and cast record has its own fetch date. A failed season refresh cannot make old episode descriptions appear fresh. Existing installations lack those child fetch dates, so their descriptions are cleared once during the upgrade and downloaded again on Refresh all. Episode numbers and watched dates remain intact. If TMDB is unreachable or the key is missing, a title may display its TMDB identity until a successful refresh. Do not reset your library to resolve that condition.
+
+New version 3 profile exports contain personal data and identity references, without provider descriptions, posters, cast, availability or events. Version 1 and 2 imports are still supported, but their provider content is discarded; merge keeps any current local metadata. Replace restores the personal profile, then Refresh all downloads metadata again. Keys remain separate. Protect exports because notes and viewing history are personal.
+
+App-created SQLite snapshots, rollback files, pre-restore backups and scheduled backups are removed after 30 days at startup/daily maintenance; count limits also apply to profile backups. Only recognized filenames in the app's managed directories qualify, and symlinks are skipped. Keep durable personal history in a version 3 export outside these directories. Old full-volume backups and manually copied version 1/2 exports still contain provider content: replace them with a version 3 export or remove that content within the provider's permitted retention period. Watch It cannot clean external copies or perform maintenance while stopped. If provider access terminates, preserve a version 3 export and purge the installation's provider data, images and provider-containing backups in accordance with the agreement. See [provider requirements](PROVIDERS.md).
+
+The Linux launcher disables inherited DNS search suffixes because the app uses fully qualified provider hosts. This mitigates the documented glibc resolver issue. Keep the default launcher when customizing the image; local short hostnames are not a supported provider configuration.

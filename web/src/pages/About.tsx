@@ -9,7 +9,7 @@ export default function About() {
     <p>Self-hosted, with one shared library per installation. The optional password protects access to that shared library; it does not create separate accounts. Docker and your own TMDB API key are required for the documented setup. Paste the key in <Link to="/settings">Settings</Link>. OMDb ratings are optional; streaming-service passwords are never needed.</p>
     <h2>Credits</h2>
     <a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer"><img src="/tmdb-logo.svg" alt="TMDB" width="100" /></a>
-    <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+    <p>This application uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.</p>
     <p>Watch-provider data is supplied by <a href="https://www.justwatch.com/">JustWatch</a> through TMDB. Optional ratings from <a href="https://www.omdbapi.com/">OMDb</a> use <a href="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</a>. Broadcast schedules from <a href="https://www.tvmaze.com/api#licensing">TVmaze</a> use <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>. Provider data is reformatted for display; these licenses are separate from the application code.</p>
     <h2>Your data</h2>
     <p>Your library, watched episodes, notes, preferences, sessions, and backups stay on your installation. The app has no telemetry or automatic support uploads.</p>

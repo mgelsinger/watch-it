@@ -1,15 +1,15 @@
 # Dependency and container review
 
-## September 20 refresh: gate remains blocked
+## September 20 applicability review
 
-The candidate image `sha256:5e6ebf496b7659e6702a4c1cc69c86faa594806c539d61fb3e0893a61fcd045a` has zero high/critical findings, 15 medium and 7 low findings in the refreshed scan. Application audits still have zero findings. The scanner correctly rejects two medium IDs missing from the earlier accepted list. They have not been added to that list:
+The refreshed scan reports 15 medium and 7 low findings with zero high/critical findings. Application dependency audits have zero findings. The two newly classified medium findings are now reviewed for the shipped self-hosted container:
 
-| Finding | Current evidence and disposition |
+| Finding | Evidence and disposition |
 | --- | --- |
-| CVE-2026-8674 | A long DNS search domain from resolver configuration or `LOCALDOMAIN` can abort a process using glibc. Provider hostname resolution makes this relevant. The candidate's test resolver had no search domains and `LOCALDOMAIN` was unset, but other Docker hosts can inherit DHCP/VPN configuration. Non-root execution and HTTP limits do not fix this. Debian lists stable trixie, including newer `2.41-12+deb13u4`, as vulnerable; a routine base refresh alone does not resolve it. Keep the gate blocked pending a verified mitigation/fix or explicit maintainer residual-risk disposition. [Debian tracker](https://security-tracker.debian.org/tracker/CVE-2026-8674). |
-| CVE-2026-89092 | Previously recorded with unknown severity, now medium. The advisory requires nscd. The shipped candidate again has no `/usr/sbin/nscd` and no `/var/run/nscd/socket`; it runs Node. The same was observed in the current upstream nonroot base. This supports a container-specific non-applicability disposition, not a claim about the host or modified images. Record maintainer disposition before changing the reviewed medium list. [Debian tracker](https://security-tracker.debian.org/tracker/CVE-2026-89092). |
+| CVE-2026-8674 | Reproduced in the prior pinned image: a 256-, 300-, or 1,024-character `LOCALDOMAIN` search domain causes glibc's `resolv_conf_matches` assertion to abort Node; shorter examples did not. The Linux startup launcher now sets `LOCALDOMAIN=.` before loading the app, overriding both inherited environment suffixes and resolver search lists. Watch It contacts fully qualified provider hosts. The Docker smoke check injects an overflowing domain, loads the actual guard, verifies the override, and resolves TMDB successfully. Accept with this mitigation for the supplied launcher; custom entrypoints that bypass it require a new review. The underlying package remains vulnerable and must be updated when a stable vendor fix is available. [Debian tracker](https://security-tracker.debian.org/tracker/CVE-2026-8674), [upstream advisory](https://www.openwall.com/lists/oss-security/2026/09/17/4). |
+| CVE-2026-89092 | Requires nscd. The runtime has neither `/usr/sbin/nscd` nor `/var/run/nscd/socket`; the Docker check now asserts both. Accepted as not applicable to the supplied container. This says nothing about the host or customized images. [Debian tracker](https://security-tracker.debian.org/tracker/CVE-2026-89092). |
 
-The current upstream runtime was inspected and contains glibc `2.41-12+deb13u4`; the candidate is pinned to `2.41-12+deb13u3`. No Dockerfile update was made merely to hide a finding. The previous review deadline is unchanged. The earlier acceptance below covers only its listed findings and does not clear these new scanner results.
+Both findings remain visible in the full scan and the scoped reviewed list. The October 10 review deadline and all high/critical/new-medium blocking rules remain. The earlier residual findings below are not represented as fixed or vulnerability-free. This is the launch preparation's technical applicability review under the existing self-hosted release policy.
 
 ## Earlier accepted platform review
 

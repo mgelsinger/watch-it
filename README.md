@@ -127,6 +127,8 @@ In **Settings > API keys > TMDB API key**, paste your key and select **Verify an
 
 **Will it find every show or English dub?** Catalog and regional availability depend on upstream data. English-audio evidence and adaptation links are partial. [How the filters work](docs/CATALOG.md).
 
+**What happens after a long break or restore?** Your lists, notes, ratings, and watched episodes stay saved. Old provider details expire, so some titles may temporarily show a TMDB ID until you select Refresh all. Exports preserve personal data; descriptions, artwork, and availability are downloaded again. [Retention and backup details](docs/OPERATIONS.md#provider-data-and-personal-history).
+
 **Where is my library?** In the Docker data volume. Rebuilding the app preserves it. Export a profile in Settings and keep a copy outside the installation. [Backups, upgrades, and recovery](docs/OPERATIONS.md).
 
 ## Development
@@ -147,7 +149,7 @@ CI checks Windows and Linux builds, browser flows, installation, upgrades, recov
 
 ## Status and support
 
-Prepared for personal self-installation. Public distribution is being finalized; a code license and private security-reporting channel still need to be selected, and [provider metadata retention](docs/PROVIDERS.md) needs resolution. See the [public-release preparation record](docs/PUBLIC_READINESS.md).
+Prepared for a self-hosted community launch under the [MIT license](LICENSE). The repository and first release await publication approval. GitHub private vulnerability reporting must be enabled when the repository becomes public. See the [launch checklist](docs/COMMUNITY_LAUNCH.md).
 
 For ordinary bugs, [open an issue](https://github.com/mgelsinger/watch-it/issues). Include your app version, installation method, and steps to reproduce. [Security reporting](SECURITY.md) · [Data and privacy](docs/PRIVACY.md).
 
@@ -155,6 +157,6 @@ For ordinary bugs, [open an issue](https://github.com/mgelsinger/watch-it/issues
 
 <a href="https://www.themoviedb.org/"><img src="web/public/tmdb-logo.svg" alt="TMDB" width="100"></a>
 
-This product uses the TMDB API but is not endorsed or certified by TMDB.
+This application uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.
 
 Metadata and artwork come from [TMDB](https://www.themoviedb.org/), with watch-provider data from [JustWatch](https://www.justwatch.com/) through TMDB. Optional ratings come from [OMDb](https://www.omdbapi.com/), and broadcast schedules from [TVmaze](https://www.tvmaze.com/). [Attribution details](docs/ATTRIBUTION.md).

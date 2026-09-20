@@ -49,7 +49,7 @@ export interface BackupCounts {
 export interface BackupDocument {
   app: 'watch-it';
   format: 'profile-backup';
-  version: 2;
+  version: 3;
   app_version: string;
   exported_at: string;
   counts: BackupCounts;
@@ -209,11 +209,11 @@ export function buildBackupProfile(db: DB): BackupProfile {
 }
 
 export function createBackup(db: DB): BackupDocument {
-  const profile = buildBackupProfile(db);
+  const profile = compactProfile(buildBackupProfile(db));
   return {
     app: 'watch-it',
     format: 'profile-backup',
-    version: 2,
+    version: 3,
     app_version: APP_VERSION,
     exported_at: new Date().toISOString(),
     counts: calculateCounts(profile),
@@ -329,9 +329,18 @@ function compactProfile(profile: BackupProfile): BackupProfile {
       .filter((title) => title.state !== null)
       .map((title) => ({
         ...title,
-        record: without(title.record, 'raw_tmdb'),
+        record: { tmdb_id: title.record.tmdb_id, media_type: title.record.media_type,
+          name: `TMDB ${String(title.record.media_type)} ${String(title.record.tmdb_id)}`,
+          ...(title.record.added_at ? { added_at: title.record.added_at } : {}) },
+        seasons: title.seasons.map((season) => ({
+          record: { season_number: season.record.season_number },
+          episodes: season.episodes.filter((episode) => episode.watched_at).map((episode) => ({
+            episode_number: episode.episode_number, watched_at: episode.watched_at,
+          })),
+        })).filter((season) => season.episodes.length > 0),
+        cast: [], availability: [],
         state: title.state ? without(title.state, 'never_suggest') : null,
-        events: title.events.filter((event) => event.type !== 'now_in_theaters'),
+        events: [],
       })),
     my_services: profile.my_services.map((row) => without(row, 'provider_name', 'logo_path')),
     settings: profile.settings.filter((row) => ['region', 'schedule_country', 'broadcast_networks', 'pick_constraints'].includes(String(row.key))),
@@ -340,8 +349,8 @@ function compactProfile(profile: BackupProfile): BackupProfile {
       ...(suggestion.title_identity ? { title_identity: suggestion.title_identity } : {}),
     })),
     suggestion_suppressions: [...suppressions.values()],
-    release_dates: profile.release_dates.map((row) => without(row)),
-    unlinked_events: profile.unlinked_events.filter((event) => event.type !== 'now_in_theaters'),
+    release_dates: [],
+    unlinked_events: [],
   };
 }
 
@@ -353,14 +362,15 @@ export function inspectBackup(input: unknown): { document: BackupDocument; previ
   let document: BackupDocument;
   let legacy = false;
   let checksumVerified = false;
-  if (body.format === 'profile-backup' && body.version === 2) {
+  if (body.format === 'profile-backup' && (body.version === 2 || body.version === 3)) {
     validateProfile(body.profile);
     const expected = (body.checksum as Row | undefined)?.value;
     const actual = checksum(body.profile);
     if (typeof expected !== 'string' || expected !== actual) throw new Error('backup checksum does not match; the file may be damaged');
     checksumVerified = true;
     const source = body as unknown as BackupDocument;
-    document = { ...source, profile: compactProfile(source.profile) };
+    legacy = body.version === 2;
+    document = { ...source, version: 3, profile: compactProfile(source.profile) };
   } else if (body.version === 1 && Array.isArray(body.titles)) {
     legacy = true;
     const profile = compactProfile(legacyToProfile(body));
@@ -368,7 +378,7 @@ export function inspectBackup(input: unknown): { document: BackupDocument; previ
     document = {
       app: 'watch-it',
       format: 'profile-backup',
-      version: 2,
+      version: 3,
       app_version: 'legacy',
       exported_at: typeof body.exported_at === 'string' ? body.exported_at : new Date(0).toISOString(),
       counts: calculateCounts(profile),
@@ -385,7 +395,7 @@ export function inspectBackup(input: unknown): { document: BackupDocument; previ
     preview: {
       ...counts,
       exported_at: document.exported_at,
-      version: legacy ? 1 : document.version,
+      version: Number(body.version),
       checksum_verified: checksumVerified,
       legacy,
     },
@@ -460,7 +470,9 @@ export function restoreBackup(db: DB, input: unknown, mode: 'merge' | 'replace')
     for (const item of profile.titles) {
       const tmdbId = integer(item.record.tmdb_id) as number;
       const type = mediaType(item.record.media_type) as 'movie' | 'tv';
-      upsert(db, 'titles', item.record, ['tmdb_id', 'media_type']);
+      if (mode === 'replace' || findTitleId(db, tmdbId, type) === null) {
+        upsert(db, 'titles', item.record, ['tmdb_id', 'media_type']);
+      }
       const titleId = findTitleId(db, tmdbId, type);
       if (titleId === null) throw new Error(`could not restore ${String(item.record.name)}`);
       if (item.state) restoreState(db, titleId, item.state, mode);

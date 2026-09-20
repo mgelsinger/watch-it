@@ -179,7 +179,7 @@ export default function Settings() {
       const result = await api<{ ok: boolean; preview: BackupPreview; safety_backup: string }>('/api/backup/restore', {
         json: { backup: selectedBackup, mode },
       });
-      setBackupMsg(`Restore complete. ${result.preview.titles} titles are in the imported backup. A safety copy of the previous profile was kept.`);
+      setBackupMsg(`Restore complete. ${result.preview.titles} titles are in the imported backup. Select Refresh all to download title details and artwork. A safety copy of the previous profile was kept.`);
       setSelectedBackup(null);
       setBackupPreview(null);
       reload();
@@ -289,7 +289,7 @@ export default function Settings() {
         <h3>Data safety</h3>
         <p className="faint" style={{ marginTop: 0 }}>
           Keep a portable copy of your library, watched episodes, lists, ratings, notes, preferences, and Never Suggest choices.
-          Save the file to your NAS or another safe location. It can restore a fresh Watch It installation on Windows or Linux.
+          Save the file to your NAS or another safe location. It contains your title IDs, lists, watched episodes, ratings, notes, and preferences. Provider descriptions, posters, cast, and availability are downloaded again after restore. API keys are never included.
         </p>
         <div className="kv">
           <span className="k">Database file</span>

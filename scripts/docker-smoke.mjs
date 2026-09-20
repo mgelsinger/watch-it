@@ -57,6 +57,15 @@ function stop(name) {
 try {
   for (const volume of volumes) docker(['volume', 'create', volume]);
   assert.equal(docker(['image', 'inspect', '--format', '{{.Config.User}}', image]), '1000:1000');
+  assert.deepEqual(JSON.parse(docker(['image', 'inspect', '--format', '{{json .Config.Cmd}}', image])), ['node', 'server/dist/start.js']);
+  // Exercise the actual resolver guard with the advisory's overflowing search list.
+  docker(['run', '--rm', '-i', '-e', `LOCALDOMAIN=${'x'.repeat(50)}.${'y'.repeat(50)}.${'z'.repeat(50)}.${'a'.repeat(50)}.${'b'.repeat(50)}.example`, image, 'node', '--input-type=module'], `
+    import './server/dist/resolver.js'; import assert from 'node:assert/strict';
+    import fs from 'node:fs'; import {lookup} from 'node:dns/promises';
+    assert.equal(process.env.LOCALDOMAIN,'.');
+    for(const name of ['/usr/sbin/nscd','/var/run/nscd/socket']) assert.equal(fs.existsSync(name),false);
+    assert.ok((await lookup('api.themoviedb.org')).address);
+  `);
   const clean = await start(volumes[0], 'fresh');
   assert.equal((await fetchReady(clean.base + '/api/settings')).status, 401);
   assert.equal((await fetchReady(clean.base + '/about')).status, 200);
@@ -106,7 +115,7 @@ try {
   const snapshot = helper(volumes[1], `import fs from 'node:fs';console.log(fs.readdirSync('/data/snapshots').find(name=>name.endsWith('.db')));`);
   docker(['run', '--rm', '--mount', `type=volume,src=${volumes[1]},dst=/data`, image, 'node', 'server/dist/maintenance.js', 'restore-snapshot', snapshot]);
   helper(volumes[1], `import Database from 'better-sqlite3';const db=new Database('/data/watch-it.db');if(db.prepare('SELECT count(*) AS n FROM migrations').get().n!==9)throw new Error('rollback schema');if(db.prepare('SELECT notes FROM user_state').get().notes!=='Preserve me')throw new Error('rollback data');db.close();`);
-  const report = { image, image_id: docker(['image','inspect','--format','{{.Id}}', image]), checks: ['fresh-install','non-root','private-image-context','login','static-spa','upgrade-from-009','volume-ownership','snapshot','merge-restore','replace-restore','graceful-shutdown','restart','integrity','rollback'], passed: true };
+  const report = { image, image_id: docker(['image','inspect','--format','{{.Id}}', image]), checks: ['fresh-install','non-root','private-image-context','resolver-search-mitigation','nscd-absent','login','static-spa','upgrade-from-009','volume-ownership','snapshot','merge-restore','replace-restore','graceful-shutdown','restart','integrity','rollback'], passed: true };
   fs.mkdirSync('artifacts', { recursive: true }); fs.writeFileSync('artifacts/docker-smoke.json', JSON.stringify(report,null,2)+'\n');
   console.log(JSON.stringify(report));
 } finally {

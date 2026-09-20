@@ -1,8 +1,8 @@
 # Public-release preparation
 
-## September 20 follow-up
+## Current self-hosted launch status
 
-The review of draft PR #1 found an additional release item: persisted provider metadata and portable backups do not have a complete retention policy matching TMDB's six-month cache limit. See [provider review](PROVIDERS.md) for the observed behavior and resolution options. `check:release` now also requires an approved, recorded provider-terms review. The license and private security contact remain unset. The hosted proposal now uses operator-managed credentials, with no API keys required from ordinary users, and remains proposal-only. The current [community-launch report](COMMUNITY_LAUNCH.md) separates this follow-up from the earlier checks below.
+The follow-up implements history-preserving provider metadata expiry, personal-only profile exports, legacy import handling, and a tested mitigation for the newly reported resolver issue. MIT is prepared as the application-code license. GitHub private vulnerability reporting is the selected channel and must be enabled after public visibility is approved. The hosted beta remains deferred. The [current launch checklist](COMMUNITY_LAUNCH.md) is authoritative; the older verification record below is historical.
 
 The subsequent community-launch work builds on draft PR #1 and is recorded in [COMMUNITY_LAUNCH.md](COMMUNITY_LAUNCH.md), with the [hosted-beta proposal](HOSTED_BETA.md), [sample demo](DEMO.md) and [announcement draft](ANNOUNCEMENT_DRAFT.md). The assessment below is the earlier preparation baseline.
 

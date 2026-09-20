@@ -34,4 +34,4 @@ ENV HOST=0.0.0.0
 USER 1000:1000
 EXPOSE 8300
 ENTRYPOINT []
-CMD ["node", "server/dist/index.js"]
+CMD ["node", "server/dist/start.js"]

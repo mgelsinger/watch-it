@@ -293,7 +293,10 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
     const local = path.join(dir, file);
     const type = file.endsWith('.png') ? 'image/png' : file.endsWith('.svg') ? 'image/svg+xml' : 'image/jpeg';
     reply.header('cache-control', 'public, max-age=604800');
-    if (fs.existsSync(local)) return reply.type(type).send(fs.createReadStream(local));
+    if (fs.existsSync(local)) {
+      if (Date.now() - fs.statSync(local).mtimeMs <= config.imageCacheDays * 86400_000) return reply.type(type).send(fs.createReadStream(local));
+      fs.unlinkSync(local);
+    }
     try {
       const got = await fetchBytes('image', `https://image.tmdb.org/t/p/${size}/${file}`);
       if (!got) return reply.code(404).send({ error: 'image not found' });

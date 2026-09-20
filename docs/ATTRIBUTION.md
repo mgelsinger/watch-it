@@ -4,4 +4,4 @@
 
 The About page displays the logo and required notice. The footer credits TMDB, JustWatch, OMDb, and TVmaze. Provider artwork and data are governed by their respective terms, separately from the application code license.
 
-Optional OMDb content uses [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/); TVmaze data uses [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). About links both licenses and notes that data is reformatted for display. See the dated [provider requirements review](PROVIDERS.md), including quotas, commercial-use requirements and the unresolved TMDB metadata-retention item.
+Optional OMDb content uses [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/); TVmaze data uses [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). About links both licenses and notes that data is reformatted for display. See the dated [provider requirements review](PROVIDERS.md), including quotas, commercial-use requirements and the implemented provider-data retention policy.

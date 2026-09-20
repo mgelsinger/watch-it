@@ -1,7 +1,11 @@
-# Security reporting and installation scope
+# Security policy
 
-watch-it is intended for a single person running their own installation. Default Docker and native listeners are local. Configure a strong installation password, HTTPS, and exact trusted-proxy addresses before exposing it to untrusted networks. Do not share one installation between mutually untrusted users.
+Watch It is a self-hosted app with one shared library per installation. The optional password protects that installation; it does not isolate different people's data. Use the localhost default, or configure a password and HTTPS before allowing untrusted access. Keep API keys, profile exports and database files private.
 
-Private security reporting is not yet configured for distribution. The repository owner must choose and verify a private reporting URL or email address, record it in `release-config.json`, and update this document before the release workflow can proceed. Do not post exploit details or credentials in public issues while that channel is pending. No response-time commitment has been established.
+## Report a vulnerability privately
 
-Dependency and container audit checks run before release. The current advisory review is in [docs/DEPENDENCY_REVIEW.md](docs/DEPENDENCY_REVIEW.md). Build or install the latest reviewed release and follow the snapshot/rollback instructions in [operations](docs/OPERATIONS.md).
+Use [GitHub private vulnerability reporting](https://github.com/mgelsinger/watch-it/security/advisories/new) once enabled at public launch. Include the affected version, installation method, reproducible steps and likely impact. Remove real keys, cookies and personal history from examples. Do not put exploit details or credentials in a public issue.
+
+Publication status: the repository is still private, and GitHub's public-repository reporting feature cannot yet be verified. Enabling it and confirming that the Report a vulnerability form is available are required publication steps. The release workflow refuses to prepare a release if GitHub does not report the feature enabled. [GitHub setup instructions](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository).
+
+Ordinary bugs belong in [Issues](https://github.com/mgelsinger/watch-it/issues). Maintainers support the latest released version on the documented Linux x86-64 Docker target. Reports are handled on a best-effort basis; no response-time guarantee is offered.

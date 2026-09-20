@@ -49,14 +49,14 @@ function movieStatus(details: tmdb.MovieDetails): string | null {
 function upsertCast(titleId: number, cast: { id: number; name: string; character?: string | null; order?: number | null; profile_path?: string | null }[]): void {
   const db = getDb();
   const stmt = db.prepare(`
-    INSERT INTO cast_members (title_id, tmdb_person_id, name, character, ord, profile_path)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO cast_members (title_id, tmdb_person_id, name, character, ord, profile_path, metadata_cached_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(title_id, tmdb_person_id, character)
-    DO UPDATE SET name = excluded.name, ord = excluded.ord, profile_path = excluded.profile_path
+    DO UPDATE SET name = excluded.name, ord = excluded.ord, profile_path = excluded.profile_path, metadata_cached_at = excluded.metadata_cached_at
   `);
   const run = db.transaction(() => {
     for (const c of cast.slice(0, 24)) {
-      stmt.run(titleId, c.id, c.name, c.character ?? '', c.order ?? 0, c.profile_path ?? null);
+      stmt.run(titleId, c.id, c.name, c.character ?? '', c.order ?? 0, c.profile_path ?? null, nowIso());
     }
   });
   run();
@@ -65,19 +65,19 @@ function upsertCast(titleId: number, cast: { id: number; name: string; character
 async function syncTvSeasons(titleId: number, details: tmdb.TvDetails): Promise<void> {
   const db = getDb();
   const seasonUpsert = db.prepare(`
-    INSERT INTO seasons (title_id, season_number, name, episode_count, air_date, poster_path)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO seasons (title_id, season_number, name, episode_count, air_date, poster_path, metadata_cached_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(title_id, season_number)
     DO UPDATE SET name = excluded.name, episode_count = excluded.episode_count,
-                  air_date = excluded.air_date, poster_path = excluded.poster_path
+                  air_date = excluded.air_date, poster_path = excluded.poster_path, metadata_cached_at = excluded.metadata_cached_at
     RETURNING id
   `);
   const episodeUpsert = db.prepare(`
-    INSERT INTO episodes (season_id, episode_number, name, air_date, runtime, overview)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO episodes (season_id, episode_number, name, air_date, runtime, overview, metadata_cached_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(season_id, episode_number)
     DO UPDATE SET name = excluded.name, air_date = excluded.air_date,
-                  runtime = excluded.runtime, overview = excluded.overview
+                  runtime = excluded.runtime, overview = excluded.overview, metadata_cached_at = excluded.metadata_cached_at
   `);
 
   for (const summary of details.seasons) {
@@ -96,9 +96,10 @@ async function syncTvSeasons(titleId: number, details: tmdb.TvDetails): Promise<
         season.episodes.length || summary.episode_count || null,
         season.air_date ?? summary.air_date ?? null,
         season.poster_path ?? summary.poster_path ?? null,
+        nowIso(),
       ) as { id: number };
       for (const ep of season.episodes) {
-        episodeUpsert.run(seasonId, ep.episode_number, ep.name ?? null, ep.air_date ?? null, ep.runtime ?? null, ep.overview ?? null);
+        episodeUpsert.run(seasonId, ep.episode_number, ep.name ?? null, ep.air_date ?? null, ep.runtime ?? null, ep.overview ?? null, nowIso());
       }
     });
     write();

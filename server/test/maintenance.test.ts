@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { config } from '../src/config.js';
 import { closeDb, migrate, getDb, setSetting } from '../src/db.js';
-import { pruneImages, scheduledBackup, diagnostics } from '../src/services/maintenance.js';
+import { pruneImages, scheduledBackup, diagnostics, pruneManagedRecoveryFiles } from '../src/services/maintenance.js';
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'watch-it-maintenance-'));
 before(() => { config.dataDir = directory; migrate(); });
@@ -26,6 +26,22 @@ test('image eviction removes only ordinary cached images and preserves database,
   assert.equal(fs.readFileSync(path.join(backupDirectory, 'photo.jpg'), 'utf8'), 'keep-backup');
   assert.equal(fs.readFileSync(path.join(images, 'unrecognized.db'), 'utf8'), 'keep');
   assert.equal(getDb().pragma('integrity_check', { simple: true }), 'ok');
+});
+
+test('recovery expiry only removes old app-created files and never follows linked directories', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'watch-it-recovery-'));
+  const snapshots = path.join(root, 'snapshots'); fs.mkdirSync(snapshots);
+  const old = path.join(snapshots, 'pre-upgrade-2020-01-01T00-00-00Z.db');
+  const manual = path.join(snapshots, 'manual.db');
+  const fresh = path.join(snapshots, 'pre-upgrade-2026-09-20T00-00-00Z.db');
+  for (const file of [old,manual,fresh]) fs.writeFileSync(file,'fixture');
+  for (const file of [old,manual]) fs.utimesSync(file,new Date(0),new Date(0));
+  fs.symlinkSync(snapshots,path.join(root,'before-rollback-123'),process.platform === 'win32' ? 'junction' : 'dir');
+  pruneManagedRecoveryFiles(root);
+  assert.equal(fs.existsSync(old),false);
+  assert.equal(fs.existsSync(manual),true);
+  assert.equal(fs.existsSync(fresh),true);
+  assert.equal(fs.lstatSync(path.join(root,'before-rollback-123')).isSymbolicLink(),true);
 });
 
 test('scheduled backups retain completed copies and diagnostics omit personal data', () => {

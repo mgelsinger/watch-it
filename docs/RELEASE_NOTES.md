@@ -1,7 +1,8 @@
 # Self-install release candidate
 
-This candidate targets one shared library per installation on x86-64 Linux containers and Windows Docker Desktop. Native development uses Node 22.12+ within Node 22. Distribution remains gated on the code license, a private security-reporting contact, provider metadata-retention review, and the current container advisory gate. See `docs/COMMUNITY_LAUNCH.md` for the current review.
+This candidate targets one shared library per installation on x86-64 Linux containers and Windows Docker Desktop. Native development uses Node 22.12+ within Node 22. Application code is MIT licensed. Publication requires owner approval, current passing checks, and activation of GitHub private vulnerability reporting when the repository becomes public. See `docs/COMMUNITY_LAUNCH.md` for the current review.
 
+- Added provider metadata expiry while preserving personal history, personal-only version 3 exports with older-format import support, and a tested Linux DNS resolver mitigation.
 - Updated framework/build dependencies and introduced dependency/container audit gates.
 - Fixed Browse retry loops, later-page error recovery, empty-page handling, and cancellation after filter changes.
 - Bounded upstream queues, retries, body sizes, and deadlines; identical requests share refresh work.
@@ -24,3 +25,5 @@ For a first installation, download the versioned `watch-it-VERSION-linux-amd64.z
 Upgraders must follow the included `docs/OPERATIONS.md`, including the ownership adjustment for older root-owned volumes and a pre-upgrade snapshot. Keep the same Compose project and data volume. The default bind address is now localhost. Set an explicit LAN address if other trusted devices need access. The runtime image has no shell or npm; use the provided Node helpers.
 
 Known limits: data and English-audio/adaptation coverage are partial and can be dated. Provider availability must be confirmed on your actual service and region. ARM images are not certified. A dedicated setup wizard and automatic feedback upload are not required for this single-user installation; Settings provides setup and manual report guidance.
+
+Migration note: descriptive season/episode fields without a known fetch date are cleared once on upgrade. Watched progress stays intact. Use Refresh all to restore title details. Version 3 profile exports download provider details again after restore; use the matching SQLite snapshot for binary rollback. App-managed snapshots and recovery copies expire after 30 days.

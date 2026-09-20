@@ -4,7 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
-import { migrate } from './db.js';
+import { migrate, getDb } from './db.js';
+import { expireProviderMetadata } from './services/retention.js';
+import { pruneImages, pruneManagedRecoveryFiles } from './services/maintenance.js';
 import { HttpError } from './http.js';
 import { titleRoutes } from './routes/titles.js';
 import { systemRoutes } from './routes/system.js';
@@ -15,6 +17,9 @@ import { registerAuth } from './auth.js';
 
 export async function createApp(options: { logger?: boolean } = {}) {
   migrate();
+  expireProviderMetadata(getDb());
+  pruneImages(config.dataDir, config.imageCacheMb * 1024 * 1024, config.imageCacheDays);
+  pruneManagedRecoveryFiles(config.dataDir, config.backupDirectory);
 
   const app = Fastify({
     logger: options.logger === false ? false : { level: 'info', redact: ['req.headers.cookie', 'req.headers.authorization', 'res.headers["set-cookie"]'], serializers: { req: (req) => ({ method: req.method, url: req.url?.split('?')[0] }) } },
