@@ -75,6 +75,7 @@ try {
   const initial = await request(clean.base, '/api/backup/export', cleanCookie);
   assert.equal(initial.profile.titles.length, 0);
   helper(volumes[0], `import fs from 'node:fs'; for (const name of ['/app/.env','/app/.git','/app/server/test','/app/node_modules/typescript','/app/web/src']) if(fs.existsSync(name)) throw new Error('Unexpected artifact: '+name);`);
+  helper(volumes[0], `import fs from 'node:fs'; if(!fs.readFileSync('/app/LICENSE','utf8').startsWith('MIT License')) throw new Error('Missing code license');`);
 
   // Build an older, root-owned database using exactly the already-shipped SQL.
   helper(volumes[1], `

@@ -28,7 +28,7 @@ The work builds on `prepare-public-release` and [draft PR #1](https://github.com
 | Secret review | Gitleaks 8.30.1 found no detected secrets in all local Git refs (16 commits at scan time) or the prepared source tree. Reports are redacted. |
 | Release configuration | Passed. Publication check intentionally remains blocked until GitHub private reporting is enabled. |
 
-The final local tested image is `sha256:fbbb064a435b0e51089992da090ac0dc20b922f0f7dba82e6d6079a09da9c7a9`. Machine-readable reports and the candidate ZIP are in ignored `artifacts/`; CI retains its own exact tested image and reports. Use the final tagged CI artifact for publication. Earlier records in [PUBLIC_READINESS.md](PUBLIC_READINESS.md) and [RELEASE_VERIFICATION.md](RELEASE_VERIFICATION.md) are historical.
+The final local tested image is `sha256:27c12ae147fb4a183f3d8c4e400f795bc604764f1a53db37875acf6682f49c1c`. Machine-readable reports and the candidate ZIP are in ignored `artifacts/`; CI retains its own exact tested image and reports. Use the final tagged CI artifact for publication. Earlier records in [PUBLIC_READINESS.md](PUBLIC_READINESS.md) and [RELEASE_VERIFICATION.md](RELEASE_VERIFICATION.md) are historical.
 
 Tests use disposable installations. The opt-in live journey reads the existing TMDB key only for normal provider requests, without printing it or recording a trace. The personal installation, library and `.env` are not changed.
 

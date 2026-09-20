@@ -24,6 +24,7 @@ ENV PATH=/nodejs/bin:/usr/local/bin:/usr/bin:/bin
 WORKDIR /app
 COPY --from=dependencies /app/node_modules node_modules
 COPY package.json ./
+COPY LICENSE ./
 COPY server/package.json server/
 COPY --from=build /app/server/dist server/dist
 COPY --from=build /app/web/dist web/dist
