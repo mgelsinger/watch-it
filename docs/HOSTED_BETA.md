@@ -1,5 +1,7 @@
 # Hosted community beta proposal
 
+**Deferred.** The owner chose a self-hosting-first community launch on September 20, 2026. This proposal is reference material for a later decision. No hosted implementation, account infrastructure or spending is authorized by that launch scope.
+
 Status: implementation proposal only, reviewed September 20, 2026. No account system, hosted private libraries, infrastructure or paid service has been created. Self-hosting remains supported. Resolve the self-hosted release gates and offer the static sample first, then decide whether demand justifies this work. This revision replaces the earlier bring-your-own-key beta proposal: ordinary hosted users should not need provider accounts or API keys.
 
 ## Smallest sensible beta

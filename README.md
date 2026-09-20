@@ -119,7 +119,7 @@ In **Settings > API keys > TMDB API key**, paste your key and select **Verify an
 
 **Does watch-it play or download videos?** No. It helps you discover and track titles, then opens watch options for your region. Streaming subscriptions are separate.
 
-**Can several people have private libraries?** Not yet. Everyone with access to an installation shares its library, progress, credentials and settings. A hosted community beta with individual accounts is [proposed](docs/HOSTED_BETA.md), not implemented.
+**Can several people have private libraries?** Not yet. Everyone with access to an installation shares its library, progress, credentials and settings. The first community launch focuses on self-hosting. The [hosted-beta proposal](docs/HOSTED_BETA.md) is deferred.
 
 **Do I need OMDb?** No. TMDB supplies discovery, posters, and its own ratings. An optional OMDb key adds IMDb, Rotten Tomatoes, and Metacritic scores where available.
 

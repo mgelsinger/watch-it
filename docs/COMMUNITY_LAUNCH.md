@@ -1,5 +1,13 @@
 # Community-launch review
 
+## Launch scope: self-hosting first
+
+Owner direction, September 20, 2026: focus the first community launch on people installing Watch It on their own computer or home server. Prioritize Docker setup, actionable TMDB key guidance, Pick For Me, library/progress tracking, and dependable backup/update instructions. Each installation keeps one shared library and uses its owner's provider credentials.
+
+Hosted accounts, private multi-user libraries and paid infrastructure are deferred. The hosted-beta document is retained for future reference and is not part of the current implementation or launch requirements. The existing fictional sample demo can support the self-hosted launch without running a public application server.
+
+The remaining self-hosted release work is the provider metadata-retention policy, container advisory disposition, code license and verified private security-reporting channel. Public visibility and release/announcement publication still require explicit owner decisions. Hosted service architecture and commercial hosting estimates do not block this phase.
+
 ## September 20 follow-up
 
 Reviewed the clean `prepare-public-release` checkout at `e6b37ef`, both local/remote branches, repository instructions, all six screenshots, setup bundle scripts, release gates, and the open draft PR #1 before editing. The existing six GitHub checks at that commit were successful; repository visibility remains private. This follow-up builds on the September 11 work below.
