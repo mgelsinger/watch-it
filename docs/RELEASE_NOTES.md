@@ -1,6 +1,14 @@
-# Self-install release candidate
+# Watch It v1.0.0
 
-This candidate targets one shared library per installation on x86-64 Linux containers and Windows Docker Desktop. Native development uses Node 22.12+ within Node 22. Application code is MIT licensed. Publication requires owner approval, current passing checks, and activation of GitHub private vulnerability reporting when the repository becomes public. See `docs/COMMUNITY_LAUNCH.md` for the current review.
+**Find your next watch and keep your place.**
+
+The first self-hosted community release brings movie and TV discovery, regional streaming options, and manual episode tracking into one installation. No video files are needed; playback happens on your streaming service. There is one shared library per installation. Application code is MIT licensed.
+
+Download **`watch-it-1.0.0-linux-amd64.zip`** and **`checksums.txt`** below. Verify the ZIP checksum, extract it, and follow `START_HERE.md`. Docker with Compose and your own TMDB API key are required; OMDb ratings are optional. Git, Node.js, Python, and a source build are not required for the installation ZIP. GitHub's automatically generated source archives are for building from source.
+
+The verified platform is Linux x86-64 containers, including Windows Docker Desktop. ARM and Apple Silicon are not yet verified. [Installation guide](https://github.com/mgelsinger/watch-it/blob/main/docs/INSTALL.md) | [Screenshots and sample demo](https://github.com/mgelsinger/watch-it#readme) | [Private security reporting](https://github.com/mgelsinger/watch-it/security/advisories/new)
+
+## Included in this release
 
 - Added provider metadata expiry while preserving personal history, personal-only version 3 exports with older-format import support, and a tested Linux DNS resolver mitigation.
 - Updated framework/build dependencies and introduced dependency/container audit gates.

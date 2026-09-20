@@ -80,7 +80,9 @@ The verified container platform is **Linux x86-64**, including Docker Desktop on
 
 **Upgrading?** Use the [upgrade guide](docs/OPERATIONS.md#upgrade-an-existing-installation) to preserve your existing library and prepare a rollback.
 
-**Before the first release:** the tested launch candidate is in [PR #1](https://github.com/mgelsinger/watch-it/pull/1). Until it is merged, [download the candidate source ZIP](https://github.com/mgelsinger/watch-it/archive/refs/heads/prepare-public-release.zip) and continue at step 2, or add `--branch prepare-public-release` to the clone command below. The standard `main` download and clone will contain this version after the merge.
+**Recommended:** [download the v1.0.0 installation ZIP](https://github.com/mgelsinger/watch-it/releases/tag/v1.0.0) and follow the [prebuilt installation guide](docs/INSTALL.md#install-a-prebuilt-release). It includes the Docker image and setup files, so you can skip the source build. Download `watch-it-1.0.0-linux-amd64.zip` and `checksums.txt`, rather than GitHub's automatically generated source archives.
+
+To build from source instead:
 
 1. **Get the project.** [Download the source ZIP](https://github.com/mgelsinger/watch-it/archive/refs/heads/main.zip) and extract it, or clone it:
 
@@ -115,7 +117,7 @@ The verified container platform is **Linux x86-64**, including Docker Desktop on
 
 In **Settings > API keys > TMDB API key**, paste your key and select **Verify and save TMDB key**. It works immediately. Choose your country under **Watch-provider region**, then open **Pick For Me** and choose your streaming services. Start with an empty library or try the sample demo first. OMDb can be skipped.
 
-[Full installation guide, key setup, and troubleshooting](docs/INSTALL.md). A downloaded release, when available, includes a prebuilt image and its setup files so you can skip the build.
+[Full installation guide, key setup, and troubleshooting](docs/INSTALL.md).
 
 ## A few useful answers
 
@@ -151,7 +153,7 @@ CI checks Windows and Linux builds, browser flows, installation, upgrades, recov
 
 ## Status and support
 
-Prepared for a self-hosted community launch under the [MIT license](LICENSE). The launch changes are in [PR #1](https://github.com/mgelsinger/watch-it/pull/1); the repository is still private and no packaged release has been published. Clean installation, backup/restore, and an existing personal installation's upgrade have been verified. Merging the PR, making the repository public, enabling private vulnerability reporting, and publishing the tested download remain publication steps. See the [launch checklist](docs/COMMUNITY_LAUNCH.md).
+Watch It is an open-source, self-hosted app under the [MIT license](LICENSE). [v1.0.0](https://github.com/mgelsinger/watch-it/releases/tag/v1.0.0) is the first community release. Clean installation, backup/restore, and an existing personal installation's upgrade have been verified. See the [launch verification record](docs/COMMUNITY_LAUNCH.md) for tested platforms and known limits. Feedback on setup, Pick For Me, and episode tracking is welcome.
 
 For ordinary bugs, [open an issue](https://github.com/mgelsinger/watch-it/issues). Include your app version, installation method, and steps to reproduce. [Security reporting](SECURITY.md) · [Data and privacy](docs/PRIVACY.md).
 
