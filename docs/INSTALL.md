@@ -26,6 +26,8 @@ You do not enter your TMDB password in watch-it. Keep the key private. An OMDb k
 
 ## 3. Download and configure
 
+**Current preview:** until [PR #1](https://github.com/mgelsinger/watch-it/pull/1) is merged, use the [candidate source ZIP](https://github.com/mgelsinger/watch-it/archive/refs/heads/prepare-public-release.zip), or clone with `git clone --branch prepare-public-release https://github.com/mgelsinger/watch-it.git`. The standard `main` source below will contain the tested launch candidate after the merge.
+
 For a source installation, [download the source ZIP](https://github.com/mgelsinger/watch-it/archive/refs/heads/main.zip) and extract it. Open the resulting folder containing `docker-compose.yml`, `Dockerfile`, and `.env.example`. Git users can instead clone `https://github.com/mgelsinger/watch-it.git`.
 
 On Windows, right-click inside that folder and choose **Open in Terminal**. If that option is unavailable, open PowerShell and use `cd` to enter the folder. On Linux, open a terminal there.

@@ -2,7 +2,7 @@
 
 **Find your next watch and keep your place.**
 
-A home for people who watch movies and TV across streaming subscriptions and lose time deciding what to watch or remembering their next episode. Tell **Pick For Me** how much time you have, choose your services and a mood, then save a suggestion and track your progress.
+Watch It is a self-hosted movie and TV discovery and watch-tracking app for people who watch across streaming subscriptions. Tell **Pick For Me** how much time you have, choose your services and a mood, then save a suggestion and manually mark episodes watched to keep your place.
 
 **No video files needed.** Watch It does not host, play or download video. Watch options opens TMDB's regional provider listing; follow a service link there to watch with your own subscription. You never give Watch It your streaming-service passwords.
 
@@ -65,7 +65,7 @@ Screenshots use a separate sample library and live TMDB artwork. Watch history i
 
 ## Try a sample before installing
 
-[Download the standalone sample demo](https://github.com/mgelsinger/watch-it/raw/refs/heads/main/web/public/demo/index.html) and open the HTML file in a browser. No Docker, key or account is needed. You can choose services and time, view a sample recommendation, save it, and mark sample episodes watched. An installed app also serves it at `/demo/`.
+[Download the standalone sample demo](web/public/demo/index.html?raw=true) and open the HTML file in a browser. No Docker, key or account is needed. You can choose services and time, view a sample recommendation, save it, and mark sample episodes watched. An installed app also serves it at `/demo/`.
 
 Titles, artwork, availability and progress in this demo are fictional. It makes no API calls, uses temporary browser memory, and never reads or changes a personal library. It demonstrates the workflow, not live recommendation quality. A public hosted demo URL has not been published. [Demo scope and hosting option](docs/DEMO.md).
 
@@ -79,6 +79,8 @@ The current installation path is Docker. You need:
 The verified container platform is **Linux x86-64**, including Docker Desktop on Windows. ARM, Apple Silicon, and other browser/device combinations need further verification. You do not need Node.js or Python for this installation.
 
 **Upgrading?** Use the [upgrade guide](docs/OPERATIONS.md#upgrade-an-existing-installation) to preserve your existing library and prepare a rollback.
+
+**Before the first release:** the tested launch candidate is in [PR #1](https://github.com/mgelsinger/watch-it/pull/1). Until it is merged, [download the candidate source ZIP](https://github.com/mgelsinger/watch-it/archive/refs/heads/prepare-public-release.zip) and continue at step 2, or add `--branch prepare-public-release` to the clone command below. The standard `main` download and clone will contain this version after the merge.
 
 1. **Get the project.** [Download the source ZIP](https://github.com/mgelsinger/watch-it/archive/refs/heads/main.zip) and extract it, or clone it:
 
@@ -149,7 +151,7 @@ CI checks Windows and Linux builds, browser flows, installation, upgrades, recov
 
 ## Status and support
 
-Prepared for a self-hosted community launch under the [MIT license](LICENSE). The repository and first release await publication approval. GitHub private vulnerability reporting must be enabled when the repository becomes public. See the [launch checklist](docs/COMMUNITY_LAUNCH.md).
+Prepared for a self-hosted community launch under the [MIT license](LICENSE). The launch changes are in [PR #1](https://github.com/mgelsinger/watch-it/pull/1); the repository is still private and no packaged release has been published. Clean installation, backup/restore, and an existing personal installation's upgrade have been verified. Merging the PR, making the repository public, enabling private vulnerability reporting, and publishing the tested download remain publication steps. See the [launch checklist](docs/COMMUNITY_LAUNCH.md).
 
 For ordinary bugs, [open an issue](https://github.com/mgelsinger/watch-it/issues). Include your app version, installation method, and steps to reproduce. [Security reporting](SECURITY.md) · [Data and privacy](docs/PRIVACY.md).
 
